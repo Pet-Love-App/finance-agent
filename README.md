@@ -51,6 +51,81 @@ AGENT_LLM_MODEL=google/gemma-3-4b
 - 请先在 LM Studio 中启动 Local Server（OpenAI Compatible）。
 - 若返回模型不存在，请把 `AGENT_LLM_MODEL` 改为 LM Studio 实际显示的 model id。
 
+## Agent 后端架构
+
+### 技术栈
+```
+- LangGraph (>=0.2.0)      # Agent 工作流框架
+- Pandas (>=2.0.0)         # 数据处理
+- jsonschema (>=4.0.0)     # JSON 验证
+- python-docx/pptx/openpyxl # Office 文件支持
+```
+
+### 核心结构
+```
+agent/                          # 核心 Agent 模块
+├── state.py                    # LangGraph 状态定义
+├── schemas.py                  # JSON Schema + 类目同义词映射
+├── graph_builder.py            # LangGraph 流程图构建
+├── nodes.py                    # 5 个处理节点的实现
+├── utils.py                    # 通用工具函数
+├── sample_data.py              # 示例测试数据
+│
+├── kb/                         # 知识库模块
+│   ├── retriever.py           # 知识库检索（文本相似度）
+│   └── ingest.py              # 知识库数据导入
+
+agent.py                        # 主入口脚本
+
+data/kb/
+└── reimbursement_kb.json      # 知识库存储文件
+```
+
+### 工作流程（5 阶段管道）
+
+```
+输入数据 → Data_Extraction → Category_Alignment → Consistency_Check 
+       → Compliance_Audit → Report_Generator → JSON/Markdown 报告
+```
+
+#### 各节点职责
+
+| 节点 | 功能 | 输出 |
+|------|------|------|
+| **Data_Extraction** | 加载、验证、标准化预算/决算数据 | DataFrame + 规范化数据 |
+| **Category_Alignment** | 用模糊匹配把决算支出映射到预算类目 | matched_category 字段 |
+| **Consistency_Check** | 检查超支/无法匹配的项目 | discrepancies + suggestions |
+| **Compliance_Audit** | 餐饮/会议类特殊审计规则 | 高风险项标记 |
+| **Report_Generator** | 生成 JSON 和 Markdown 报告 | 完整审计报告 |
+
+### 状态流转（AgentState）
+
+```python
+AgentState {
+  # 输入
+  budget_source → actual_source
+  
+  # 中间处理
+  budget_data, actual_data      # 规范化列表
+  budget_df, actual_df           # Pandas 数据框
+  
+  # 输出
+  discrepancies → [{type, risk, message, details}]
+  suggestions → [建议文本]
+  extraction_warnings → [提取警告]
+  report → {report_json, report_markdown}
+}
+```
+
+### 核心特点
+
+- ✅ **流程化** - LangGraph 声明式管道
+- ✅ **有状态** - TypedDict 状态贯穿全程
+- ✅ **可验证** - 严格的 JSON Schema 校验
+- ✅ **智能匹配** - 支持类目别名和模糊匹配
+- ✅ **双格式输出** - JSON + Markdown 报告
+- ✅ **可扩展** - 知识库支持自定义规则
+
 ## 知识库（RAG）
 若你已将报销制度文档放入 `docs/reimbursement`，可先构建本地知识库索引：
 
