@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 from pathlib import Path
-from typing import Any, Dict, Iterator, List
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 # 将仓库根目录加入 sys.path，便于导入已有 reimbursement_agent 包
 CURRENT_FILE = Path(__file__).resolve()
@@ -24,6 +24,113 @@ SYSTEM_PROMPT = (
 )
 
 DEFAULT_KB_PATH = PROJECT_ROOT / "data" / "kb" / "reimbursement_kb.json"
+
+
+def _get_llm_base_url() -> str:
+    raw = (
+        os.getenv("AGENT_LLM_BASE_URL", "").strip()
+        or os.getenv("AGENT_LLM_API_URL", "").strip()
+        or "https://api.openai.com/v1"
+    )
+    normalized = raw.rstrip("/")
+    parsed = urlparse(normalized)
+
+    path = (parsed.path or "").rstrip("/")
+    if not path:
+        normalized = f"{normalized}/v1"
+
+    return normalized
+
+
+def _safe_int_env(name: str, default: int, *, min_value: int) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(value, min_value)
+
+
+def _normalize_history(history: List[Dict[str, str]], message: str) -> List[Dict[str, str]]:
+    history_messages: List[Dict[str, str]] = []
+    for item in history[-20:]:
+        role = str(item.get("role", "")).strip()
+        content = str(item.get("content", "")).strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        history_messages.append({"role": role, "content": content})
+
+    normalized: List[Dict[str, str]] = []
+    for item in history_messages:
+        if not normalized:
+            if item["role"] != "user":
+                continue
+            normalized.append(item)
+            continue
+
+        if normalized[-1]["role"] == item["role"]:
+            normalized[-1]["content"] += "\n\n" + item["content"]
+        else:
+            normalized.append(item)
+
+    if not normalized:
+        return [{"role": "user", "content": message}]
+
+    if normalized[-1]["role"] != "user":
+        normalized.append({"role": "user", "content": message})
+    elif normalized[-1]["content"] != message:
+        normalized[-1]["content"] += "\n\n" + message
+    return normalized
+
+
+def _build_llm_messages(message: str, history: List[Dict[str, str]], kb_context: str) -> Tuple[List[Dict[str, str]], bool]:
+    base_url = _get_llm_base_url()
+    parsed = urlparse(base_url)
+    host = (parsed.hostname or "").lower()
+    is_local = host in {"localhost", "127.0.0.1", "::1"}
+
+    normalized = _normalize_history(history, message)
+
+    messages: List[Dict[str, str]] = []
+    if is_local:
+        if normalized:
+            context_block = f"\n\n可参考的知识库片段（优先基于这些资料回答）：\n{kb_context}" if kb_context else ""
+            normalized[0]["content"] = f"{SYSTEM_PROMPT}{context_block}\n\n用户问题：{normalized[0]['content']}"
+        messages.extend(normalized)
+    else:
+        system_prompt = SYSTEM_PROMPT
+        if kb_context:
+            system_prompt += f"\n\n可参考的知识库片段：\n{kb_context}"
+        messages.append({"role": "system", "content": system_prompt})
+        messages.extend(normalized)
+
+    return messages, is_local
+
+
+def _rule_reply(message: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    budget_source = payload.get("budget_source")
+    actual_source = payload.get("actual_source")
+
+    if budget_source is not None and actual_source is not None:
+        return _run_audit(budget_source, actual_source)
+
+    if re.search(r"sample|示例|demo", message, flags=re.IGNORECASE):
+        from agent.sample_data import get_sample_payloads  # noqa: WPS433
+
+        budget_json, actual_json = get_sample_payloads()
+        return _run_audit(budget_json, actual_json)
+
+    if "高风险" in message or "风险" in message:
+        return {
+            "reply": "高风险触发规则：类目无法映射、单项超支>10%、总额超预算、餐饮/会议缺签到或通知附件。",
+        }
+
+    if "材料" in message or "附件" in message:
+        return {
+            "reply": "餐饮/会议类支出需具备签到表或通知文件提示，建议在上传时同时附发票和明细。",
+        }
+
+    return None
 
 
 def _brief_report(report_json: Dict[str, Any]) -> str:
@@ -70,7 +177,7 @@ def _help_text() -> str:
 
 
 def _is_llm_enabled() -> bool:
-    base_url = os.getenv("AGENT_LLM_BASE_URL", "https://api.openai.com/v1").strip()
+    base_url = _get_llm_base_url()
     api_key = os.getenv("AGENT_LLM_API_KEY", "").strip()
     parsed = urlparse(base_url)
     host = (parsed.hostname or "").lower()
@@ -80,8 +187,8 @@ def _is_llm_enabled() -> bool:
 
 def _get_kb_context(message: str) -> str:
     kb_path = Path(os.getenv("AGENT_KB_PATH", str(DEFAULT_KB_PATH))).resolve()
-    top_k = int(os.getenv("AGENT_KB_TOP_K", "4") or "4")
-    max_chars = int(os.getenv("AGENT_KB_MAX_CHARS", "1800") or "1800")
+    top_k = _safe_int_env("AGENT_KB_TOP_K", 4, min_value=1)
+    max_chars = _safe_int_env("AGENT_KB_MAX_CHARS", 1800, min_value=600)
 
     if not kb_path.exists():
         return ""
@@ -92,14 +199,14 @@ def _get_kb_context(message: str) -> str:
         return ""
 
     try:
-        chunks = retrieve_chunks(message, kb_path=kb_path, top_k=max(top_k, 1))
-        return format_retrieved_context(chunks, max_chars=max(max_chars, 600))
+        chunks = retrieve_chunks(message, kb_path=kb_path, top_k=top_k)
+        return format_retrieved_context(chunks, max_chars=max_chars)
     except Exception:
         return ""
 
 
 def _llm_chat(message: str, history: List[Dict[str, str]], kb_context: str = "") -> str:
-    base_url = os.getenv("AGENT_LLM_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+    base_url = _get_llm_base_url()
     api_key = os.getenv("AGENT_LLM_API_KEY", "").strip()
     parsed = urlparse(base_url)
     host = (parsed.hostname or "").lower()
@@ -109,51 +216,8 @@ def _llm_chat(message: str, history: List[Dict[str, str]], kb_context: str = "")
         raise ValueError("未配置 AGENT_LLM_API_KEY。非本地 LLM 服务需要有效 API Key。")
 
     model = os.getenv("AGENT_LLM_MODEL", "gpt-4o-mini").strip()
-    timeout_seconds = int(os.getenv("AGENT_LLM_TIMEOUT", "60") or "60")
-
-    history_messages: List[Dict[str, str]] = []
-    for item in history[-20:]:
-        role = str(item.get("role", "")).strip()
-        content = str(item.get("content", "")).strip()
-        if role not in {"user", "assistant"} or not content:
-            continue
-        history_messages.append({"role": role, "content": content})
-
-    normalized: List[Dict[str, str]] = []
-    for item in history_messages:
-        if not normalized:
-            if item["role"] != "user":
-                continue
-            normalized.append(item)
-            continue
-
-        if normalized[-1]["role"] == item["role"]:
-            normalized[-1]["content"] += "\n\n" + item["content"]
-        else:
-            normalized.append(item)
-
-    if not normalized:
-        normalized = [{"role": "user", "content": message}]
-    else:
-        if normalized[-1]["role"] != "user":
-            normalized.append({"role": "user", "content": message})
-        elif normalized[-1]["content"] != message:
-            normalized[-1]["content"] += "\n\n" + message
-
-    messages: List[Dict[str, str]] = []
-    if is_local:
-        if normalized:
-            context_block = f"\n\n可参考的知识库片段（优先基于这些资料回答）：\n{kb_context}" if kb_context else ""
-            normalized[0]["content"] = (
-                f"{SYSTEM_PROMPT}{context_block}\n\n用户问题：{normalized[0]['content']}"
-            )
-        messages.extend(normalized)
-    else:
-        system_prompt = SYSTEM_PROMPT
-        if kb_context:
-            system_prompt += f"\n\n可参考的知识库片段：\n{kb_context}"
-        messages.append({"role": "system", "content": system_prompt})
-        messages.extend(normalized)
+    timeout_seconds = _safe_int_env("AGENT_LLM_TIMEOUT", 60, min_value=10)
+    messages, _ = _build_llm_messages(message=message, history=history, kb_context=kb_context)
 
     body = {
         "model": model,
@@ -196,7 +260,7 @@ def _llm_chat(message: str, history: List[Dict[str, str]], kb_context: str = "")
 
 
 def _llm_chat_stream(message: str, history: List[Dict[str, str]], kb_context: str = "") -> Iterator[str]:
-    base_url = os.getenv("AGENT_LLM_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+    base_url = _get_llm_base_url()
     api_key = os.getenv("AGENT_LLM_API_KEY", "").strip()
     parsed = urlparse(base_url)
     host = (parsed.hostname or "").lower()
@@ -206,51 +270,8 @@ def _llm_chat_stream(message: str, history: List[Dict[str, str]], kb_context: st
         raise ValueError("未配置 AGENT_LLM_API_KEY。非本地 LLM 服务需要有效 API Key。")
 
     model = os.getenv("AGENT_LLM_MODEL", "gpt-4o-mini").strip()
-    timeout_seconds = int(os.getenv("AGENT_LLM_TIMEOUT", "60") or "60")
-
-    history_messages: List[Dict[str, str]] = []
-    for item in history[-20:]:
-        role = str(item.get("role", "")).strip()
-        content = str(item.get("content", "")).strip()
-        if role not in {"user", "assistant"} or not content:
-            continue
-        history_messages.append({"role": role, "content": content})
-
-    normalized: List[Dict[str, str]] = []
-    for item in history_messages:
-        if not normalized:
-            if item["role"] != "user":
-                continue
-            normalized.append(item)
-            continue
-
-        if normalized[-1]["role"] == item["role"]:
-            normalized[-1]["content"] += "\n\n" + item["content"]
-        else:
-            normalized.append(item)
-
-    if not normalized:
-        normalized = [{"role": "user", "content": message}]
-    else:
-        if normalized[-1]["role"] != "user":
-            normalized.append({"role": "user", "content": message})
-        elif normalized[-1]["content"] != message:
-            normalized[-1]["content"] += "\n\n" + message
-
-    messages: List[Dict[str, str]] = []
-    if is_local:
-        if normalized:
-            context_block = f"\n\n可参考的知识库片段（优先基于这些资料回答）：\n{kb_context}" if kb_context else ""
-            normalized[0]["content"] = (
-                f"{SYSTEM_PROMPT}{context_block}\n\n用户问题：{normalized[0]['content']}"
-            )
-        messages.extend(normalized)
-    else:
-        system_prompt = SYSTEM_PROMPT
-        if kb_context:
-            system_prompt += f"\n\n可参考的知识库片段：\n{kb_context}"
-        messages.append({"role": "system", "content": system_prompt})
-        messages.extend(normalized)
+    timeout_seconds = _safe_int_env("AGENT_LLM_TIMEOUT", 60, min_value=10)
+    messages, _ = _build_llm_messages(message=message, history=history, kb_context=kb_context)
 
     body = {
         "model": model,
@@ -311,50 +332,20 @@ def _iter_text_chunks(text: str, chunk_size: int = 36) -> Iterator[str]:
 
 def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
     message = str(request.get("message", "")).strip()
-    payload = request.get("payload", {}) or {}
+    raw_payload = request.get("payload", {}) or {}
+    payload = raw_payload if isinstance(raw_payload, dict) else {}
     history = payload.get("history", []) if isinstance(payload, dict) else []
     safe_history = history if isinstance(history, list) else []
 
-    budget_source = payload.get("budget_source")
-    actual_source = payload.get("actual_source")
-
-    if budget_source is not None and actual_source is not None:
-        audited = _run_audit(budget_source, actual_source)
-        reply = str(audited.get("reply", ""))
-        report_markdown = str(audited.get("report_markdown", "") or "")
+    rule_result = _rule_reply(message, payload)
+    if rule_result is not None:
+        reply = str(rule_result.get("reply", ""))
+        report_markdown = str(rule_result.get("report_markdown", "") or "")
         for chunk in _iter_text_chunks(reply):
             yield {"type": "delta", "delta": chunk}
         if report_markdown:
             yield {"type": "delta", "delta": f"\n\n{report_markdown}"}
-        yield {"type": "done", "response": {"ok": True, **audited}}
-        return
-
-    if re.search(r"sample|示例|demo", message, flags=re.IGNORECASE):
-        from agent.sample_data import get_sample_payloads  # noqa: WPS433
-
-        budget_json, actual_json = get_sample_payloads()
-        audited = _run_audit(budget_json, actual_json)
-        reply = str(audited.get("reply", ""))
-        report_markdown = str(audited.get("report_markdown", "") or "")
-        for chunk in _iter_text_chunks(reply):
-            yield {"type": "delta", "delta": chunk}
-        if report_markdown:
-            yield {"type": "delta", "delta": f"\n\n{report_markdown}"}
-        yield {"type": "done", "response": {"ok": True, **audited}}
-        return
-
-    if "高风险" in message or "风险" in message:
-        reply = "高风险触发规则：类目无法映射、单项超支>10%、总额超预算、餐饮/会议缺签到或通知附件。"
-        for chunk in _iter_text_chunks(reply):
-            yield {"type": "delta", "delta": chunk}
-        yield {"type": "done", "response": {"ok": True, "reply": reply}}
-        return
-
-    if "材料" in message or "附件" in message:
-        reply = "餐饮/会议类支出需具备签到表或通知文件提示，建议在上传时同时附发票和明细。"
-        for chunk in _iter_text_chunks(reply):
-            yield {"type": "delta", "delta": chunk}
-        yield {"type": "done", "response": {"ok": True, "reply": reply}}
+        yield {"type": "done", "response": {"ok": True, **rule_result}}
         return
 
     if _is_llm_enabled():
@@ -380,35 +371,14 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
 
 def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
     message = str(request.get("message", "")).strip()
-    payload = request.get("payload", {}) or {}
+    raw_payload = request.get("payload", {}) or {}
+    payload = raw_payload if isinstance(raw_payload, dict) else {}
     history = payload.get("history", []) if isinstance(payload, dict) else []
     safe_history = history if isinstance(history, list) else []
 
-    budget_source = payload.get("budget_source")
-    actual_source = payload.get("actual_source")
-
-    if budget_source is not None and actual_source is not None:
-        audited = _run_audit(budget_source, actual_source)
-        return {"ok": True, **audited}
-
-    if re.search(r"sample|示例|demo", message, flags=re.IGNORECASE):
-        from agent.sample_data import get_sample_payloads  # noqa: WPS433
-
-        budget_json, actual_json = get_sample_payloads()
-        audited = _run_audit(budget_json, actual_json)
-        return {"ok": True, **audited}
-
-    if "高风险" in message or "风险" in message:
-        return {
-            "ok": True,
-            "reply": "高风险触发规则：类目无法映射、单项超支>10%、总额超预算、餐饮/会议缺签到或通知附件。",
-        }
-
-    if "材料" in message or "附件" in message:
-        return {
-            "ok": True,
-            "reply": "餐饮/会议类支出需具备签到表或通知文件提示，建议在上传时同时附发票和明细。",
-        }
+    rule_result = _rule_reply(message, payload)
+    if rule_result is not None:
+        return {"ok": True, **rule_result}
 
     if _is_llm_enabled():
         kb_context = _get_kb_context(message)

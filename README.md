@@ -29,6 +29,22 @@ $env:AGENT_LLM_TIMEOUT="60"
 - 未设置 `AGENT_LLM_API_KEY` 时，系统继续走本地规则回复，不会调用云端模型。
 - 设置后，普通对话会进入 LLM 自由问答；`sample/示例/demo` 和传入审计 payload 仍优先走审计流程。
 
+### 接入 Paratera 云端模型
+你提供的平台地址可直接接入（OpenAI 兼容接口）：
+
+```bash
+# PowerShell 示例（推荐仅在当前会话临时设置）
+$env:AGENT_LLM_API_KEY="<你的真实Key>"
+$env:AGENT_LLM_API_URL="https://llmapi.paratera.com"
+$env:AGENT_LLM_MODEL="<平台可用模型ID>"
+```
+
+说明：
+- `AGENT_LLM_API_URL` 与 `AGENT_LLM_BASE_URL` 均可使用，代码会优先读取 `BASE_URL`，否则读取 `API_URL`。
+- 若地址未带 `/v1`，系统会自动补齐为 `/v1` 后再调用 `chat/completions`。
+- 请不要把 Key 写入代码仓库，建议放入本地环境变量或未提交的 `.env` 文件。
+- API Key 具备完整账户权限，请定期轮换并避免在日志/截图中泄露。
+
 ### 使用 LM Studio（本地模型）
 LM Studio 默认提供 OpenAI 兼容接口，可直接接入：
 
@@ -131,7 +147,7 @@ AgentState {
 
 ```bash
 # 在项目根目录执行
-python -m reimbursement_agent.kb.ingest --source docs/reimbursement --output data/kb/reimbursement_kb.json
+python -m agent.kb.ingest --source docs/reimbursement --output data/kb/reimbursement_kb.json
 ```
 
 然后在 `desktop_app/.env` 增加（可选，默认已指向该路径）：
@@ -145,6 +161,20 @@ AGENT_KB_MAX_CHARS=1800
 说明：
 - 聊天时会先检索知识库片段，再交给 LLM 生成答案。
 - 文档更新后，重新执行一次 `ingest` 命令即可刷新知识库。
+
+## Agent 审计配置
+可通过环境变量做“策略参数化”，避免把规则阈值硬编码在代码里：
+
+```bash
+# 单类目超支阈值（默认 0.10）
+AGENT_CATEGORY_OVERRUN_THRESHOLD=0.10
+
+# 高风险标签（默认 High Risk）
+AGENT_HIGH_RISK_LABEL=High Risk
+
+# 特殊审计类目关键字，英文逗号分隔（默认 餐饮,会议）
+AGENT_SPECIAL_EXPENSE_KEYWORDS=餐饮,会议
+```
 
 ## 目录
 - `electron/main.ts`：Electron 主进程、IPC、文件监听。

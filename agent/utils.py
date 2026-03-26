@@ -8,8 +8,9 @@ import pandas as pd
 from .schemas import CATEGORY_SYNONYMS
 
 try:
-    from jsonschema import validate
+    from jsonschema import ValidationError, validate
 except Exception:  # pragma: no cover
+    ValidationError = ValueError
     validate = None
 
 
@@ -26,7 +27,11 @@ def safe_load_payload(payload: Any) -> Dict[str, Any]:
 
 def validate_payload_schema(payload: Dict[str, Any], schema: Dict[str, Any], label: str) -> None:
     if validate is not None:
-        validate(instance=payload, schema=schema)
+        try:
+            validate(instance=payload, schema=schema)
+        except ValidationError as exc:
+            path = ".".join(str(item) for item in getattr(exc, "absolute_path", [])) or "<root>"
+            raise ValueError(f"{label} 字段校验失败: {path} - {exc.message}") from exc
         return
     if not isinstance(payload, dict):
         raise ValueError(f"{label} 必须是对象")
@@ -57,6 +62,7 @@ def append_discrepancy(
 ) -> None:
     payload = {"type": issue_type, "risk": risk, "message": message}
     if details:
+        payload["details"] = details
         payload.update(details)
     state_items.append(payload)
 

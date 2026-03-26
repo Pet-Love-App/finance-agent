@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from .config import get_audit_config
 from .schemas import ACTUAL_SCHEMA, BUDGET_SCHEMA
 from .state import AgentState
 from .utils import (
@@ -82,8 +83,15 @@ def data_extraction_node(state: AgentState) -> AgentState:
 
 
 def category_alignment_node(state: AgentState) -> AgentState:
-    budget_df = state["budget_df"].copy()
-    actual_df = state["actual_df"].copy()
+    budget_df = state.get("budget_df", pd.DataFrame()).copy()
+    actual_df = state.get("actual_df", pd.DataFrame()).copy()
+
+    if "category" not in budget_df.columns:
+        budget_df["category"] = ""
+    if "expense_type" not in actual_df.columns:
+        actual_df["expense_type"] = ""
+    if "claimed_category" not in actual_df.columns:
+        actual_df["claimed_category"] = ""
 
     budget_categories = budget_df["category"].tolist()
     alias_map = build_budget_alias_map(budget_df)
@@ -111,18 +119,30 @@ def category_alignment_node(state: AgentState) -> AgentState:
 
 
 def consistency_check_node(state: AgentState) -> AgentState:
-    budget_df = state["budget_df"].copy()
-    actual_df = state["actual_df"].copy()
+    config = get_audit_config()
+    budget_df = state.get("budget_df", pd.DataFrame()).copy()
+    actual_df = state.get("actual_df", pd.DataFrame()).copy()
 
     discrepancies = list(state.get("discrepancies", []))
     suggestions = list(state.get("suggestions", []))
+
+    if "matched_category" not in actual_df.columns:
+        actual_df["matched_category"] = pd.NA
+    if "match_strategy" not in actual_df.columns:
+        actual_df["match_strategy"] = "unmatched"
+    if "amount" not in actual_df.columns:
+        actual_df["amount"] = 0.0
+    if "category" not in budget_df.columns:
+        budget_df["category"] = ""
+    if "budget_amount" not in budget_df.columns:
+        budget_df["budget_amount"] = 0.0
 
     unmatched_rows = actual_df[actual_df["matched_category"].isna()]
     for _, row in unmatched_rows.iterrows():
         append_discrepancy(
             discrepancies,
             issue_type="Category Compliance",
-            risk="High Risk",
+            risk=config.high_risk_label,
             message="该决算支出无法映射到任何预算父类。",
             details={
                 "item": row.get("expense_type", ""),
@@ -148,13 +168,13 @@ def consistency_check_node(state: AgentState) -> AgentState:
         (compare_df["actual_amount"] - compare_df["budget_amount"]) / safe_budget
     ).fillna(0.0)
 
-    overspent_rows = compare_df[compare_df["overspend_ratio"] > 0.10]
+    overspent_rows = compare_df[compare_df["overspend_ratio"] > config.category_overrun_threshold]
     for _, row in overspent_rows.iterrows():
         append_discrepancy(
             discrepancies,
             issue_type="Category Budget Overrun",
-            risk="High Risk",
-            message="单项类目超支超过 10%。",
+            risk=config.high_risk_label,
+            message=f"单项类目超支超过 {config.category_overrun_threshold:.0%}。",
             details={
                 "category": row["category"],
                 "budget_amount": round(float(row["budget_amount"]), 2),
@@ -172,7 +192,7 @@ def consistency_check_node(state: AgentState) -> AgentState:
         append_discrepancy(
             discrepancies,
             issue_type="Total Budget Overrun",
-            risk="High Risk",
+            risk=config.high_risk_label,
             message="决算总额超出预算总额。",
             details={
                 "budget_total": round(total_budget, 2),
@@ -189,11 +209,12 @@ def consistency_check_node(state: AgentState) -> AgentState:
 
 
 def compliance_audit_node(state: AgentState) -> AgentState:
+    config = get_audit_config()
     actual_df = state["actual_df"].copy()
     discrepancies = list(state.get("discrepancies", []))
     suggestions = list(state.get("suggestions", []))
 
-    special_types = {"餐饮", "会议"}
+    special_types = set(config.special_expense_keywords)
 
     for _, row in actual_df.iterrows():
         expense_type = str(row.get("expense_type", "")).strip()
@@ -209,7 +230,7 @@ def compliance_audit_node(state: AgentState) -> AgentState:
             append_discrepancy(
                 discrepancies,
                 issue_type="Material Compliance",
-                risk="High Risk",
+                risk=config.high_risk_label,
                 message="餐饮/会议类支出缺少签到表或通知文件。",
                 details={
                     "item": expense_type,
@@ -226,16 +247,17 @@ def compliance_audit_node(state: AgentState) -> AgentState:
 
 
 def report_generator_node(state: AgentState) -> AgentState:
+    config = get_audit_config()
     discrepancies = state.get("discrepancies", [])
     suggestions = dedupe_keep_order(state.get("suggestions", []))
     extraction_warnings = state.get("extraction_warnings", [])
     actual_df = state.get("actual_df", pd.DataFrame())
 
-    high_risk_count = sum(1 for item in discrepancies if item.get("risk") == "High Risk")
+    high_risk_count = sum(1 for item in discrepancies if item.get("risk") == config.high_risk_label)
     unmatched_count = sum(
         1
         for item in discrepancies
-        if item.get("type") == "Category Compliance" and item.get("risk") == "High Risk"
+        if item.get("type") == "Category Compliance" and item.get("risk") == config.high_risk_label
     )
 
     report_json: Dict[str, Any] = {
