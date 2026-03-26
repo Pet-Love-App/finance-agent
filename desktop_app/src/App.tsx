@@ -262,7 +262,7 @@ export default function App() {
         <header className="home-header">
           <h1>智能报销 Agent</h1>
           <p>请选择你要执行的任务，启动对应的模板和助手。</p>
-          {error && <p className="error" style={{ padding: "0 20px" }}>错误: {error}</p>}
+          {error && <p className="error">错误: {error}</p>}
         </header>
 
         <section className="feature-cards">
@@ -294,15 +294,15 @@ export default function App() {
         <h1>任务工作区</h1>
         <p>自动监控文件变化，可随时与 Agent 对话处理。</p>
         
-        <button onClick={() => setView("home")} disabled={loading} style={{ background: "#64748b", color: "#fff", marginTop: "16px" }}>
+        <button className="sidebar-btn-secondary" onClick={() => setView("home")} disabled={loading}>
           返回首页
         </button>
 
-        <div className="status-block" style={{ marginTop: "24px" }}>
+        <div className="status-block">
           <p>当前文件:</p>
-          <p className="path" style={{ marginBottom: "12px" }}>{currentFile ?? "未选择"}</p>
+          <p className="path">{currentFile ?? "未选择"}</p>
           {currentFile && (
-            <button onClick={handleDownload} style={{ width: "100%", background: "#10b981", color: "#fff" }}>
+            <button className="sidebar-btn-primary" onClick={handleDownload}>
               下载此文档
             </button>
           )}
