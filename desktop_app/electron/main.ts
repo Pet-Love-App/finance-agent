@@ -88,6 +88,7 @@ function invokePythonChat(request: { message: string; payload?: unknown }): Prom
 
 type StreamEvent =
   | { type: "delta"; delta: string }
+  | { type: "status"; status: string }
   | { type: "done"; response: unknown }
   | { type: "error"; error: string };
 
@@ -131,6 +132,10 @@ function invokePythonChatStream(chatId: string, request: { message: string; payl
       const parsed = JSON.parse(line) as StreamEvent;
       if (parsed.type === "delta") {
         emitChatStreamEvent(chatId, { type: "delta", delta: String(parsed.delta ?? "") });
+        return;
+      }
+      if (parsed.type === "status") {
+        emitChatStreamEvent(chatId, { type: "status", status: String((parsed as any).status ?? "") });
         return;
       }
       if (parsed.type === "done") {

@@ -8,10 +8,12 @@ export type AgentChatResponse = {
 
 export type AgentChatStreamEvent =
   | { chatId: string; type: "delta"; delta: string }
-  | { chatId: string; type: "done"; response: AgentChatResponse }
+  | { chatId: string; type: "status"; status: string }
+  | { chatId: string; type: "done"; response: unknown }
   | { chatId: string; type: "error"; error: string };
 
 export type ChatMessage = {
   role: "user" | "agent";
   content: string;
+  status?: string;
 };

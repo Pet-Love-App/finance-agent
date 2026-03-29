@@ -330,17 +330,19 @@ def _iter_text_chunks(text: str, chunk_size: int = 36) -> Iterator[str]:
         yield content[index : index + max(chunk_size, 8)]
 
 
-def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]: 
     message = str(request.get("message", "")).strip()
     raw_payload = request.get("payload", {}) or {}
     payload = raw_payload if isinstance(raw_payload, dict) else {}
     history = payload.get("history", []) if isinstance(payload, dict) else []
     safe_history = history if isinstance(history, list) else []
 
+    yield {"type": "status", "status": "正在分析意图..."}
     rule_result = _rule_reply(message, payload)
     if rule_result is not None:
+        yield {"type": "status", "status": "正在处理审计规则..."}
         reply = str(rule_result.get("reply", ""))
-        report_markdown = str(rule_result.get("report_markdown", "") or "")
+        report_markdown = str(rule_result.get("report_markdown", "") or "")     
         for chunk in _iter_text_chunks(reply):
             yield {"type": "delta", "delta": chunk}
         if report_markdown:
@@ -349,7 +351,9 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
         return
 
     if _is_llm_enabled():
+        yield {"type": "status", "status": "正在调用 RAG 知识库检索..."}
         kb_context = _get_kb_context(message)
+        yield {"type": "status", "status": "正在生成回答..."}
         streamed_reply = ""
         try:
             for chunk in _llm_chat_stream(message=message, history=safe_history, kb_context=kb_context):
@@ -360,7 +364,7 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
             for chunk in _iter_text_chunks(streamed_reply):
                 yield {"type": "delta", "delta": chunk}
 
-        yield {"type": "done", "response": {"ok": True, "reply": streamed_reply, "mode": "llm"}}
+        yield {"type": "done", "response": {"ok": True, "reply": streamed_reply, "mode": "llm"}}                                                                        
         return
 
     reply = _help_text()

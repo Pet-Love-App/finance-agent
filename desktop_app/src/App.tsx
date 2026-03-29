@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+﻿import { useEffect, useRef, useState } from "react";
 
 import { PreviewPanel } from "./components/PreviewPanel";
+import { MarkdownRenderer } from "./components/MarkdownRenderer";
 import type { AgentChatResponse, AgentChatStreamEvent, ChatMessage } from "./types/chat";
 import type { TemplatePreview } from "./types/preview";
 
@@ -18,10 +17,51 @@ export default function App() {
   const [inputText, setInputText] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
+
+  const appRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [chatPanePercent, setChatPanePercent] = useState<number>(45);
+  const [sidebarWidthPx, setSidebarWidthPx] = useState<number>(280);
+  const splitterDragRef = useRef<
+    | null
+    | {
+        kind: "chat";
+        pointerId: number;
+        startX: number;
+        startPercent: number;
+        width: number;
+        sign: 1 | -1;
+      }
+    | {
+        kind: "sidebar";
+        pointerId: number;
+        startX: number;
+        startWidthPx: number;
+        appWidth: number;
+      }
+  >(null);
+
+  const RESIZE_HIT_PX = 8;
+
+  const typewriterPendingRef = useRef("");
+  const typewriterTimerRef = useRef<number | null>(null);
+  const typewriterRunningRef = useRef(false);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (scrollRafRef.current !== null) {
+      cancelAnimationFrame(scrollRafRef.current);
+    }
+    scrollRafRef.current = requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: chatLoading ? "auto" : "smooth" });
+    });
+    return () => {
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
+  }, [messages, chatLoading]);
   const [error, setError] = useState<string | null>(
     bridgeReady
       ? null
@@ -42,6 +82,143 @@ export default function App() {
       bridge.unwatchTemplate().catch(() => undefined);
     };
   }, [bridge]);
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const drag = splitterDragRef.current;
+      if (!drag) return;
+      if (event.pointerId !== drag.pointerId) return;
+
+      const deltaX = event.clientX - drag.startX;
+
+      if (drag.kind === "chat") {
+        if (!drag.width) return;
+        const deltaPercent = ((deltaX * drag.sign) / drag.width) * 100;
+        const next = drag.startPercent + deltaPercent;
+
+        const minPanePx = 320;
+        const minPercent = Math.min(45, (minPanePx / drag.width) * 100);
+        const maxPercent = 100 - minPercent;
+
+        setChatPanePercent(Math.max(minPercent, Math.min(maxPercent, next)));
+        return;
+      }
+
+      const minSidebarPx = 220;
+      const minMainPx = 520;
+      const maxSidebarPx = Math.max(minSidebarPx, drag.appWidth - minMainPx);
+      const nextSidebar = drag.startWidthPx + deltaX;
+      setSidebarWidthPx(Math.max(minSidebarPx, Math.min(maxSidebarPx, nextSidebar)));
+    };
+
+    const stopDragging = () => {
+      if (!splitterDragRef.current) return;
+      splitterDragRef.current = null;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+
+    const onPointerUp = () => stopDragging();
+    const onPointerCancel = () => stopDragging();
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+      stopDragging();
+    };
+  }, []);
+
+  const updateLastAgentMessageStatus = (status: string) => {
+    setMessages((prev) => {
+      for (let index = prev.length - 1; index >= 0; index -= 1) {
+        if (prev[index].role !== "agent") continue;
+        const next = [...prev];
+        next[index] = { ...next[index], status };
+        return next;
+      }
+      return prev;
+    });
+  };
+
+  const appendToLastAgentMessage = (addition: string) => {
+    if (!addition) return;
+    setMessages((prev) => {
+      for (let index = prev.length - 1; index >= 0; index -= 1) {
+        if (prev[index].role !== "agent") continue;
+        const next = [...prev];
+        next[index] = { ...next[index], content: next[index].content + addition };
+        return next;
+      }
+      return prev;
+    });
+  };
+
+  const replaceLastAgentMessage = (content: string) => {
+    setMessages((prev) => {
+      for (let index = prev.length - 1; index >= 0; index -= 1) {
+        if (prev[index].role !== "agent") continue;
+        const next = [...prev];
+        next[index] = { ...next[index], content };
+        return next;
+      }
+      return prev;
+    });
+  };
+
+  const stopTypewriter = () => {
+    if (typewriterTimerRef.current !== null) {
+      window.clearTimeout(typewriterTimerRef.current);
+      typewriterTimerRef.current = null;
+    }
+    typewriterRunningRef.current = false;
+    typewriterPendingRef.current = "";
+  };
+
+  const flushTypewriterAll = () => {
+    if (typewriterTimerRef.current !== null) {
+      window.clearTimeout(typewriterTimerRef.current);
+      typewriterTimerRef.current = null;
+    }
+    typewriterRunningRef.current = false;
+    if (typewriterPendingRef.current) {
+      appendToLastAgentMessage(typewriterPendingRef.current);
+      typewriterPendingRef.current = "";
+    }
+  };
+
+  const pushTypewriterDelta = (delta: string) => {
+    if (!delta) return;
+    typewriterPendingRef.current += delta;
+
+    if (typewriterRunningRef.current) {
+      return;
+    }
+
+    typewriterRunningRef.current = true;
+    const intervalMs = 18;
+    const charsPerTick = 4;
+
+    const tick = () => {
+      const pending = typewriterPendingRef.current;
+      if (!pending) {
+        typewriterRunningRef.current = false;
+        typewriterTimerRef.current = null;
+        return;
+      }
+
+      const slice = pending.slice(0, charsPerTick);
+      typewriterPendingRef.current = pending.slice(charsPerTick);
+      appendToLastAgentMessage(slice);
+
+      typewriterTimerRef.current = window.setTimeout(tick, intervalMs);
+    };
+
+    typewriterTimerRef.current = window.setTimeout(tick, 0);
+  };
 
   const handleOpenTemplate = async (type: string, title: string) => {
     if (!bridge) {
@@ -122,37 +299,7 @@ export default function App() {
     setInputText("");
     setChatLoading(true);
 
-    const appendToLastAgentMessage = (addition: string) => {
-      setMessages((prev) => {
-        const targetIndex = [...prev].reverse().findIndex((item) => item.role === "agent");
-        if (targetIndex < 0) {
-          return prev;
-        }
-        const actualIndex = prev.length - 1 - targetIndex;
-        const next = [...prev];
-        next[actualIndex] = {
-          ...next[actualIndex],
-          content: next[actualIndex].content + addition,
-        };
-        return next;
-      });
-    };
-
-    const replaceLastAgentMessage = (content: string) => {
-      setMessages((prev) => {
-        const targetIndex = [...prev].reverse().findIndex((item) => item.role === "agent");
-        if (targetIndex < 0) {
-          return prev;
-        }
-        const actualIndex = prev.length - 1 - targetIndex;
-        const next = [...prev];
-        next[actualIndex] = {
-          ...next[actualIndex],
-          content,
-        };
-        return next;
-      });
-    };
+    stopTypewriter();
 
     try {
       const supportsStream =
@@ -182,33 +329,47 @@ export default function App() {
         return;
       }
 
-      setMessages((prev) => [...prev, { role: "agent", content: "" }]);
+      setMessages((prev) => [...prev, { role: "agent", content: "", status: "正在连接 Agent..." }]);
 
       let startedChatId = "";
       let streamedText = "";
 
-      const stopListening = bridge.subscribeAgentChatEvent((event: any) => {
+      const stopListening = bridge.subscribeAgentChatEvent((event: AgentChatStreamEvent) => {
+        if (!startedChatId) {
+          startedChatId = event.chatId;
+        }
+
         if (event.chatId !== startedChatId) {
+          return;
+        }
+
+        if (event.type === "status") {
+          updateLastAgentMessageStatus(event.status);
           return;
         }
 
         if (event.type === "delta") {
           streamedText += event.delta;
-          appendToLastAgentMessage(event.delta);
+          pushTypewriterDelta(event.delta);
           return;
         }
 
         if (event.type === "error") {
+          stopTypewriter();
           const errText = `调用失败：${event.error || "未知错误"}`;
           replaceLastAgentMessage(streamedText ? `${streamedText}\n\n${errText}` : errText);
+          updateLastAgentMessageStatus("");
           stopListening();
           setChatLoading(false);
           return;
         }
 
+        stopTypewriter();
+
         const response = event.response as AgentChatResponse;
         if (!response.ok) {
           replaceLastAgentMessage(`调用失败：${response.error ?? "未知错误"}`);
+          updateLastAgentMessageStatus("");
           stopListening();
           setChatLoading(false);
           return;
@@ -219,6 +380,7 @@ export default function App() {
           finalContent += `\n\n${response.report_markdown}`;
         }
         replaceLastAgentMessage(finalContent);
+        updateLastAgentMessageStatus("");
         stopListening();
         setChatLoading(false);
       });
@@ -228,6 +390,7 @@ export default function App() {
           history: historyForAgent,
         });
         startedChatId = started.chatId;
+        updateLastAgentMessageStatus("正在分析意图...");
       } catch (startErr) {
         stopListening();
         throw startErr;
@@ -289,8 +452,8 @@ export default function App() {
   }
 
   return (
-    <div className="app-layout">
-      <aside className="sidebar">
+    <div className="app-layout" ref={appRef}>
+      <aside className="sidebar" style={{ flex: `0 0 ${sidebarWidthPx}px` }}>
         <h1>任务工作区</h1>
         <p>自动监控文件变化，可随时与 Agent 对话处理。</p>
         
@@ -308,10 +471,82 @@ export default function App() {
           )}
         </div>
         {error && <p className="error">错误: {error}</p>}
+
+        <div
+          className="resize-handle resize-handle--right"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整侧边栏宽度"
+          tabIndex={0}
+          onPointerDown={(event) => {
+            const container = appRef.current;
+            if (!container) return;
+
+            const sidebarEl = (event.currentTarget as HTMLDivElement).parentElement;
+            if (sidebarEl) {
+              const rect = sidebarEl.getBoundingClientRect();
+              if (event.clientX < rect.right - RESIZE_HIT_PX) return;
+            }
+
+            const rect = container.getBoundingClientRect();
+            splitterDragRef.current = {
+              kind: "sidebar",
+              pointerId: event.pointerId,
+              startX: event.clientX,
+              startWidthPx: sidebarWidthPx,
+              appWidth: rect.width,
+            };
+            (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
+            document.body.style.userSelect = "none";
+            document.body.style.cursor = "col-resize";
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+            event.preventDefault();
+            const delta = event.key === "ArrowLeft" ? -12 : 12;
+            setSidebarWidthPx((prev) => Math.max(220, prev + delta));
+          }}
+        />
       </aside>
 
-      <main className="content">
-        <section className="chat-panel">
+      <main className="content" ref={contentRef}>
+        <section className="chat-panel" style={{ flex: `0 0 ${chatPanePercent}%` }}>
+          <div
+            className="resize-handle resize-handle--right"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整聊天与预览宽度"
+            tabIndex={0}
+            onPointerDown={(event) => {
+              const container = contentRef.current;
+              if (!container) return;
+
+              const chatEl = (event.currentTarget as HTMLDivElement).parentElement;
+              if (chatEl) {
+                const rect = chatEl.getBoundingClientRect();
+                if (event.clientX < rect.right - RESIZE_HIT_PX) return;
+              }
+
+              const rect = container.getBoundingClientRect();
+              splitterDragRef.current = {
+                kind: "chat",
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startPercent: chatPanePercent,
+                width: rect.width,
+                sign: 1,
+              };
+              (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
+              document.body.style.userSelect = "none";
+              document.body.style.cursor = "col-resize";
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              const delta = event.key === "ArrowLeft" ? -2 : 2;
+              setChatPanePercent((prev) => Math.max(20, Math.min(80, prev + delta)));
+            }}
+          />
           <div className="chat-header">
             <h2>Agent 对话</h2>
             <button
@@ -332,7 +567,15 @@ export default function App() {
                     <div className={`chat-msg-bubble ${msg.role}`}>
                       {msg.role === "agent" ? (
                         <div className="markdown-content">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                          {msg.status && (
+                            <div className="agent-status-card" aria-live="polite">
+                              <span className="spinner-icon" aria-hidden="true">
+                                ↻
+                              </span>
+                              <span className="agent-status-text">{msg.status}</span>
+                            </div>
+                          )}
+                          <MarkdownRenderer content={msg.content} />
                         </div>
                       ) : (
                         <div className="plaintext-content">{msg.content}</div>
@@ -362,11 +605,48 @@ export default function App() {
             </button>
           </div>
         </section>
-        
-        <div className="preview-container">
+
+        <div className="preview-container" style={{ flex: `1 1 ${100 - chatPanePercent}%` }}>
+          <div
+            className="resize-handle resize-handle--left"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整聊天与预览宽度"
+            tabIndex={0}
+            onPointerDown={(event) => {
+              const container = contentRef.current;
+              if (!container) return;
+
+              const previewEl = (event.currentTarget as HTMLDivElement).parentElement;
+              if (previewEl) {
+                const rect = previewEl.getBoundingClientRect();
+                if (event.clientX > rect.left + RESIZE_HIT_PX) return;
+              }
+
+              const rect = container.getBoundingClientRect();
+              splitterDragRef.current = {
+                kind: "chat",
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startPercent: chatPanePercent,
+                width: rect.width,
+                sign: 1,
+              };
+              (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
+              document.body.style.userSelect = "none";
+              document.body.style.cursor = "col-resize";
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              const delta = event.key === "ArrowLeft" ? -2 : 2;
+              setChatPanePercent((prev) => Math.max(20, Math.min(80, prev + delta)));
+            }}
+          />
           <PreviewPanel preview={preview} />
         </div>
       </main>
     </div>
   );
 }
+

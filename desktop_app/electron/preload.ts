@@ -6,6 +6,7 @@ type Unsubscribe = () => void;
 
 type AgentChatStreamEvent =
   | { chatId: string; type: "delta"; delta: string }
+  | { chatId: string; type: "status"; status: string }
   | { chatId: string; type: "done"; response: unknown }
   | { chatId: string; type: "error"; error: string };
 
