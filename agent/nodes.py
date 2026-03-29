@@ -55,6 +55,7 @@ def data_extraction_node(state: AgentState) -> AgentState:
 
         normalized_actual.append(
             {
+                "invoice_no": str(row.get("invoice_no", "") or "").strip(),
                 "expense_type": str(row.get("expense_type", "")).strip(),
                 "amount": to_float(row.get("amount", 0.0)),
                 "claimed_category": str(row.get("claimed_category", "")).strip(),
@@ -208,16 +209,71 @@ def consistency_check_node(state: AgentState) -> AgentState:
     }
 
 
+# 模拟内存数据库用于防重发票
+_PROCESSED_INVOICES = set()
+
 def compliance_audit_node(state: AgentState) -> AgentState:
     config = get_audit_config()
     actual_df = state["actual_df"].copy()
+    budget_df = state.get("budget_df", pd.DataFrame())
     discrepancies = list(state.get("discrepancies", []))
     suggestions = list(state.get("suggestions", []))
 
     special_types = set(config.special_expense_keywords)
+    
+    # 获取动态的全局字典和当前项目的预算类别
+    budget_categories = budget_df["category"].tolist() if "category" in budget_df.columns else []
+    alias_map = build_budget_alias_map(budget_df)
 
     for _, row in actual_df.iterrows():
         expense_type = str(row.get("expense_type", "")).strip()
+        matched_category = str(row.get("matched_category", "")).strip()
+        invoice_no = str(row.get("invoice_no", "")).strip()
+
+        # 1. 发票防重校验
+        if invoice_no:
+            if invoice_no in _PROCESSED_INVOICES:
+                append_discrepancy(
+                    discrepancies,
+                    issue_type="Duplicate Invoice",
+                    risk=config.high_risk_label,
+                    message="检测到潜在重复报销",
+                    details={
+                        "item": expense_type,
+                        "invoice_no": invoice_no,
+                        "amount": float(row.get("amount", 0.0)),
+                    },
+                )
+                suggestions.append(f"发票号 {invoice_no} 已被使用过，请核实是否重复报销。")
+            else:
+                _PROCESSED_INVOICES.add(invoice_no)
+
+        # 2. 类目合法性交叉校验（动态防“张冠李戴”）
+        # 仅根据发票实际支出(expense_type)进行独立客观地推断它本该属于哪个预算类别
+        expected_category, _ = fuzzy_align_category(
+            expense_type=expense_type,
+            claimed_category="",  # 忽略用户主观申报类别，只看事实花费
+            budget_categories=budget_categories,
+            alias_map=alias_map
+        )
+        
+        # 如果推算出的客观大类和最终匹配到的大类不一致，说明用户瞎填了
+        if expected_category and matched_category and matched_category != "nan":
+            if expected_category != matched_category:
+                append_discrepancy(
+                    discrepancies,
+                    issue_type="Category Mismatch",
+                    risk=config.high_risk_label,
+                    message=f"类目合规校验失败：实际支出属于[{expected_category}]，但被申报合并至[{matched_category}]核算。",
+                    details={
+                        "item": expense_type,
+                        "expected_category": expected_category,
+                        "actual_category": matched_category,
+                    },
+                )
+                suggestions.append(f"支出项“{expense_type}”客观上应归入“{expected_category}”，请勿在“{matched_category}”中违规报销。")
+
+        # 3. 特殊类型附件校验
         is_special = any(key in expense_type for key in special_types)
         if not is_special:
             continue
