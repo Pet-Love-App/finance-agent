@@ -302,6 +302,102 @@ def compliance_audit_node(state: AgentState) -> AgentState:
     }
 
 
+def llm_verification_node(state: AgentState) -> AgentState:
+    """Optional LLM-assisted verification: ask model to re-evaluate borderline mappings."""
+    print("[LLM NODE] llm_verification_node running...")
+    import os as _os
+    print("[LLM NODE] AGENT_LLM_DEBUG=", _os.getenv("AGENT_LLM_DEBUG"))
+    print("[LLM NODE] AGENT_LLM_API_KEY present=", bool(_os.getenv("AGENT_LLM_API_KEY")))
+    print("[LLM NODE] AGENT_ENABLE_LLM_CHECKS=", _os.getenv("AGENT_ENABLE_LLM_CHECKS"))
+    from .config import get_audit_config
+    from .utils import llm_align_category_for_items, build_budget_alias_map
+
+    config = get_audit_config()
+    if not getattr(config, "enable_llm_checks", False):
+        return {"discrepancies": state.get("discrepancies", []), "suggestions": state.get("suggestions", [])}
+
+    api_key = _os.getenv("OPENAI_API_KEY") or _os.getenv("AGENT_LLM_API_KEY")
+    if not api_key:
+        return {"discrepancies": state.get("discrepancies", []), "suggestions": state.get("suggestions", [])}
+
+    budget_df = state.get("budget_df", pd.DataFrame()).copy()
+    actual_df = state.get("actual_df", pd.DataFrame()).copy()
+
+    budget_categories = budget_df["category"].tolist() if "category" in budget_df.columns else []
+    alias_map = build_budget_alias_map(budget_df)
+
+    # Strategy change per request:
+    # - 如果模糊匹配已经发现问题（expected is None 或 expected != matched），不要调用大模型（节省成本），直接保留原有问题提示。
+    # - 仅对模糊匹配看起来没有问题（expected == matched）的条目，调用 LLM 做额外核查以避免漏判。
+    candidates_to_ask = []
+    for idx, row in actual_df.iterrows():
+        expense_type = str(row.get("expense_type", "")).strip()
+        matched_category = str(row.get("matched_category", "")).strip()
+
+        expected, _ = fuzzy_align_category(
+            expense_type=expense_type,
+            claimed_category="",
+            budget_categories=budget_categories,
+            alias_map=alias_map,
+        )
+
+        # ask LLM when fuzzy check did NOT already flag a mismatch
+        # i.e., include items where expected is None (unmatched) OR expected == matched_category
+        if not (expected and matched_category and expected != matched_category):
+            item = row.to_dict()
+            item["_index"] = int(idx)
+            candidates_to_ask.append(item)
+
+    if not candidates_to_ask:
+        return {"discrepancies": state.get("discrepancies", []), "suggestions": state.get("suggestions", [])}
+
+    # limit batch size to control cost
+    batch = candidates_to_ask[:50]
+    print("[LLM NODE] Candidates to ask:", [(b.get("_index"), b.get("expense_type")) for b in batch])
+    try:
+        suggestions_from_llm = llm_align_category_for_items(
+            items=batch,
+            budget_categories=budget_categories,
+            model=config.llm_model,
+            temperature=config.llm_temperature,
+            api_key=api_key,
+        )
+        print("[LLM NODE] LLM returned", len(suggestions_from_llm), "suggestions")
+    except Exception as exc:
+        print("[LLM NODE] LLM call failed:", exc)
+        return {"discrepancies": state.get("discrepancies", []), "suggestions": state.get("suggestions", [])}
+
+    discrepancies = list(state.get("discrepancies", []))
+    suggestions = list(state.get("suggestions", []))
+
+    for rec in suggestions_from_llm:
+        try:
+            idx = int(rec.get("index", -1))
+            suggested = rec.get("suggested_category")
+            reason = rec.get("reason", "")
+        except Exception:
+            continue
+
+        if not suggested:
+            continue
+
+        # compare against current matched category
+        row = actual_df.iloc[idx] if 0 <= idx < len(actual_df) else None
+        matched = str(row.get("matched_category", "")) if row is not None else ""
+        if suggested != matched:
+            # Do not expose internal index in the output details; keep it for internal mapping only
+            append_discrepancy(
+                discrepancies,
+                issue_type="LLM Category Suggestion",
+                risk=config.high_risk_label,
+                message=f"LLM suggests category '{suggested}' for 支出项 '{row.get('expense_type','')}'",
+                details={"suggested_category": suggested, "reason": reason},
+            )
+            suggestions.append(f"LLM 建议将支出项“{row.get('expense_type','')}”归入“{suggested}”：{reason}")
+
+    return {"discrepancies": discrepancies, "suggestions": dedupe_keep_order(suggestions)}
+
+
 def report_generator_node(state: AgentState) -> AgentState:
     config = get_audit_config()
     discrepancies = state.get("discrepancies", [])
