@@ -4,7 +4,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Optional
 
 
 @dataclass
@@ -68,7 +68,48 @@ def _load_kb(kb_path: str | Path) -> Dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+# ---------------------------
+# SentenceTransformer model
+# ---------------------------
+_model = None
+
+
+def _get_model():
+    global _model
+    if _model is not None:
+        return _model
+
+    try:
+        import torch
+        from sentence_transformers import SentenceTransformer
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        _model = SentenceTransformer(
+            "jinaai/jina-embeddings-v5-text-nano-retrieval",
+            trust_remote_code=True,
+            device=device,
+        )
+        return _model
+    except Exception:
+        _model = None
+        return None
+
+
+def _embed_texts(texts: List[str]):
+    model = _get_model()
+    if model is None:
+        raise RuntimeError("Embedding model is not available")
+
+    # delay import numpy to runtime
+    import numpy as np
+
+    emb = model.encode(texts, convert_to_numpy=True, show_progress_bar=False, batch_size=32)
+    # ensure 2D
+    return emb
+
+
 def retrieve_chunks(query: str, *, kb_path: str | Path, top_k: int = 4) -> List[RetrievedChunk]:
+    """原有的基于词频/规则的检索，作为回退方案。"""
     if not query.strip():
         return []
 
@@ -116,3 +157,74 @@ def format_retrieved_context(chunks: Sequence[RetrievedChunk], *, max_chars: int
         total += len(block)
 
     return "\n\n".join(lines)
+
+
+# ---------------------------
+# 对外接口：语义召回
+# ---------------------------
+def search_policy(query: str, top_k: int = 3, kb_path: Optional[str | Path] = None) -> List[RetrievedChunk]:
+    """
+    使用向量检索来返回与 query 最相关的片段。
+
+    返回值: List[RetrievedChunk]，每个包含 source（原文件路径或来源标识）、title（制度名称）、content（片段正文）、score（相似度分数）。
+    """
+    if not query or not query.strip():
+        return []
+
+    if kb_path is None:
+        kb_path = Path(__file__).resolve().parents[2] / "data" / "kb" / "reimbursement_kb.json"
+
+    kb_payload = _load_kb(kb_path)
+    chunks = kb_payload.get("chunks", [])
+    if not isinstance(chunks, list) or len(chunks) == 0:
+        return []
+
+    # prepare texts to embed: combine title and content so title contributes to semantics
+    texts: List[str] = []
+    metadata: List[Dict] = []
+    for item in chunks:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()
+        content = str(item.get("content", "")).strip()
+        source = str(item.get("source", kb_path))
+        full = (title + "\n" + content).strip()
+        if not full:
+            continue
+        texts.append(full)
+        metadata.append({"title": title or "未命名片段", "content": content, "source": source})
+
+    # try vector embedding
+    try:
+        import numpy as np
+
+        emb_matrix = _embed_texts(texts)
+        query_emb = _embed_texts([query])[0]
+
+        # cosine similarity
+        emb_norms = np.linalg.norm(emb_matrix, axis=1)
+        q_norm = np.linalg.norm(query_emb) + 1e-10
+        sims = (emb_matrix @ query_emb) / (emb_norms * q_norm + 1e-12)
+
+        # get top indices
+        order = list(reversed(sorted(range(len(sims)), key=lambda i: float(sims[i]))))
+        # sorted descending
+        order = sorted(range(len(sims)), key=lambda i: float(sims[i]), reverse=True)
+
+        results: List[RetrievedChunk] = []
+        for idx in order[: max(1, top_k)]:
+            meta = metadata[idx]
+            score = float(sims[idx])
+            results.append(
+                RetrievedChunk(
+                    source=meta.get("source", "未知来源"),
+                    title=meta.get("title", "未命名片段"),
+                    content=meta.get("content", ""),
+                    score=score,
+                )
+            )
+
+        return results
+    except Exception:
+        # 回退到基于词汇的检索
+        return retrieve_chunks(query, kb_path=kb_path, top_k=top_k)
