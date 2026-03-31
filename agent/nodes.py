@@ -217,19 +217,23 @@ def compliance_audit_node(state: AgentState) -> AgentState:
     suggestions = list(state.get("suggestions", []))
 
     special_types = set(config.special_expense_keywords)
-    
+
     # 获取动态的全局字典和当前项目的预算类别
     budget_categories = budget_df["category"].tolist() if "category" in budget_df.columns else []
     alias_map = build_budget_alias_map(budget_df)
 
+    # Track seen invoice numbers locally per invocation to detect duplicates within this batch
+    seen_invoices: set[str] = set()
+
     for _, row in actual_df.iterrows():
         expense_type = str(row.get("expense_type", "")).strip()
-        matched_category = str(row.get("matched_category", "")).strip()
+        _raw_matched = row.get("matched_category")
+        matched_category = "" if pd.isna(_raw_matched) else str(_raw_matched).strip()
         invoice_no = str(row.get("invoice_no", "")).strip()
 
         # 1. 发票防重校验
         if invoice_no:
-            if invoice_no in _PROCESSED_INVOICES:
+            if invoice_no in seen_invoices:
                 append_discrepancy(
                     discrepancies,
                     issue_type="Duplicate Invoice",
@@ -243,7 +247,7 @@ def compliance_audit_node(state: AgentState) -> AgentState:
                 )
                 suggestions.append(f"发票号 {invoice_no} 已被使用过，请核实是否重复报销。")
             else:
-                _PROCESSED_INVOICES.add(invoice_no)
+                seen_invoices.add(invoice_no)
 
         # 2. 类目合法性交叉校验（动态防“张冠李戴”）
         # 仅根据发票实际支出(expense_type)进行独立客观地推断它本该属于哪个预算类别
@@ -255,7 +259,7 @@ def compliance_audit_node(state: AgentState) -> AgentState:
         )
         
         # 如果推算出的客观大类和最终匹配到的大类不一致，说明用户瞎填了
-        if expected_category and matched_category and matched_category != "nan":
+        if expected_category and matched_category:
             if expected_category != matched_category:
                 append_discrepancy(
                     discrepancies,
