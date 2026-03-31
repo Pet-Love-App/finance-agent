@@ -36,10 +36,9 @@ def get_audit_config() -> AuditConfig:
         os.getenv("AGENT_SPECIAL_EXPENSE_KEYWORDS", "餐饮,会议"),
         ("餐饮", "会议"),
     )
+    # Only enable LLM-based audit checks when explicitly configured
+
     enable_llm = os.getenv("AGENT_ENABLE_LLM_CHECKS", "").strip().lower() in ("1", "true", "yes")
-    # If not explicitly enabled, allow enabling when an agent-scoped API key exists
-    if not enable_llm:
-        enable_llm = bool(os.getenv("AGENT_LLM_API_KEY") or os.getenv("OPENAI_API_KEY"))
     llm_model = os.getenv("AGENT_LLM_MODEL", "DeepSeekV3.2")
     llm_temp = _safe_float(os.getenv("AGENT_LLM_TEMPERATURE", "0.0"), 0.0)
     return AuditConfig(

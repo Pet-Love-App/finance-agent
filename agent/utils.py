@@ -7,27 +7,25 @@ import pandas as pd
 
 from .schemas import CATEGORY_SYNONYMS
 import os
-import json
 from typing import Iterable
 import urllib.request
 import urllib.error
+
 try:
     # prefer dotenv if available to load .env into environment
     from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None  # type: ignore[assignment]
+
+if load_dotenv is not None:
+    # Load default .env if present
     load_dotenv()
-except Exception:
-    pass
-# If user placed .env under desktop_app/.env, try loading it as a fallback
-try:
-    from dotenv import load_dotenv
+    # If user placed .env under desktop_app/.env, try loading it as a fallback
     # agent/utils.py -> parent is finance-agent directory
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     desktop_env = os.path.join(base_dir, "desktop_app", ".env")
     if os.path.exists(desktop_env):
         load_dotenv(desktop_env)
-except Exception:
-    pass
-
 try:
     from jsonschema import ValidationError, validate
 except Exception:  # pragma: no cover

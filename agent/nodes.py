@@ -305,11 +305,7 @@ def compliance_audit_node(state: AgentState) -> AgentState:
 
 def llm_verification_node(state: AgentState) -> AgentState:
     """Optional LLM-assisted verification: ask model to re-evaluate borderline mappings."""
-    print("[LLM NODE] llm_verification_node running...")
     import os as _os
-    print("[LLM NODE] AGENT_LLM_DEBUG=", _os.getenv("AGENT_LLM_DEBUG"))
-    print("[LLM NODE] AGENT_LLM_API_KEY present=", bool(_os.getenv("AGENT_LLM_API_KEY")))
-    print("[LLM NODE] AGENT_ENABLE_LLM_CHECKS=", _os.getenv("AGENT_ENABLE_LLM_CHECKS"))
     from .config import get_audit_config
     from .utils import llm_align_category_for_items, build_budget_alias_map
 
