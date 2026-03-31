@@ -1,0 +1,21 @@
+# PDF
+PyMuPDF>=1.24.0
+
+# Word
+python-docx>=1.1.0
+
+# PPT
+python-pptx>=0.6.23
+
+# Excel
+openpyxl>=3.1.0
+
+# OCR API 调用
+requests>=2.31.0
+
+# 工具
+chardet>=5.2.0
+Pillow>=10.0.0
+
+# 环境变量管理（可选）
+python-dotenv>=1.0.0
