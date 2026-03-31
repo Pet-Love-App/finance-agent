@@ -23,6 +23,9 @@ class AuditConfig:
     category_overrun_threshold: float
     high_risk_label: str
     special_expense_keywords: Tuple[str, ...]
+    enable_llm_checks: bool
+    llm_model: str
+    llm_temperature: float
 
 
 @lru_cache(maxsize=1)
@@ -33,8 +36,16 @@ def get_audit_config() -> AuditConfig:
         os.getenv("AGENT_SPECIAL_EXPENSE_KEYWORDS", "餐饮,会议"),
         ("餐饮", "会议"),
     )
+    # Only enable LLM-based audit checks when explicitly configured
+
+    enable_llm = os.getenv("AGENT_ENABLE_LLM_CHECKS", "").strip().lower() in ("1", "true", "yes")
+    llm_model = os.getenv("AGENT_LLM_MODEL", "DeepSeekV3.2")
+    llm_temp = _safe_float(os.getenv("AGENT_LLM_TEMPERATURE", "0.0"), 0.0)
     return AuditConfig(
         category_overrun_threshold=max(threshold, 0.0),
         high_risk_label=high_risk_label,
         special_expense_keywords=special_keywords,
+        enable_llm_checks=enable_llm,
+        llm_model=llm_model,
+        llm_temperature=llm_temp,
     )
