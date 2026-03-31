@@ -35,6 +35,7 @@ ACTUAL_SCHEMA: Dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
+                    "invoice_no": {"type": ["string", "number", "null"]},
                     "expense_type": {"type": "string"},
                     "claimed_category": {"type": "string"},
                     "amount": {"type": ["number", "string"]},

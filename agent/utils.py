@@ -6,7 +6,26 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from .schemas import CATEGORY_SYNONYMS
+import os
+from typing import Iterable
+import urllib.request
+import urllib.error
 
+try:
+    # prefer dotenv if available to load .env into environment
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None  # type: ignore[assignment]
+
+if load_dotenv is not None:
+    # Load default .env if present
+    load_dotenv()
+    # If user placed .env under desktop_app/.env, try loading it as a fallback
+    # agent/utils.py -> parent is finance-agent directory
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    desktop_env = os.path.join(base_dir, "desktop_app", ".env")
+    if os.path.exists(desktop_env):
+        load_dotenv(desktop_env)
 try:
     from jsonschema import ValidationError, validate
 except Exception:  # pragma: no cover
@@ -129,3 +148,97 @@ def fuzzy_align_category(
         return budget_norm_to_raw[expense_hits[0]], "fuzzy_expense"
 
     return None, "unmatched"
+
+
+def _call_openai_chat(messages: List[Dict[str, str]], model: str, temperature: float, api_key: Optional[str] = None, timeout: int = 15) -> str:
+    # allow overriding endpoint via env var (e.g., self-hosted or vendor URL)
+    url = os.getenv("OPENAI_API_URL") or os.getenv("AGENT_LLM_API_URL") or "https://api.openai.com/v1/chat/completions"
+    # if user provided only base host (no path), append standard chat completions path
+    try:
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(url)
+        if not parsed.path or parsed.path == "/":
+            parsed = parsed._replace(path="/v1/chat/completions")
+            url = urlunparse(parsed)
+    except Exception:
+        pass
+    payload = json.dumps({"model": model, "messages": messages, "temperature": float(temperature)}, ensure_ascii=False)
+    req = urllib.request.Request(url, data=payload.encode("utf-8"), method="POST")
+    req.add_header("Content-Type", "application/json")
+    if not api_key:
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("AGENT_LLM_API_KEY")
+    if not api_key:
+        raise RuntimeError("LLM API key not set in environment (.env accepted). Set OPENAI_API_KEY or AGENT_LLM_API_KEY.")
+    req.add_header("Authorization", f"Bearer {api_key}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"LLM request failed: {exc.code} {exc.reason}") from exc
+    try:
+        parsed = json.loads(body)
+        # Chat Completions response shape: choices[0].message.content
+        return parsed["choices"][0]["message"]["content"]
+    except Exception:
+        # fallback to raw body
+        return body
+
+
+def llm_align_category_for_items(
+    items: Iterable[Dict[str, Any]],
+    budget_categories: List[str],
+    model: str,
+    temperature: float = 0.0,
+    api_key: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Ask an LLM to re-evaluate expected categories for a list of items.
+
+    Each input item should contain at least: index (optional), expense_type, claimed_category, matched_category, amount.
+    Returns a list of dicts with keys: index, suggested_category (or null), reason.
+    """
+    if not api_key:
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("AGENT_LLM_API_KEY")
+    if not api_key:
+        raise RuntimeError("LLM API key not set for LLM checks. Set OPENAI_API_KEY or AGENT_LLM_API_KEY.")
+
+    budget_text = ", ".join(budget_categories) if budget_categories else "(no budget categories)"
+
+    items_list = []
+    for i, it in enumerate(items):
+        items_list.append(
+            {
+                "index": int(it.get("_index", i)),
+                "expense_type": it.get("expense_type", ""),
+                "claimed_category": it.get("claimed_category", ""),
+                "matched_category": it.get("matched_category", ""),
+                "amount": float(it.get("amount", 0.0) or 0.0),
+            }
+        )
+
+    system = (
+        "You are a concise financial auditor assistant. Given an expense description and the project's budget categories, "
+        "suggest the most appropriate budget category if the provided mapping seems incorrect. Output only valid JSON: "
+        "a list of objects with keys: index (int), suggested_category (string or null), reason (string). Keep answers short."
+    )
+
+    user = {
+        "text": f"Budget categories: {budget_text}\n\nItems: {json.dumps(items_list, ensure_ascii=False)}\n\nReturn JSON only."
+    }
+
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user["text"]}]
+
+    raw = _call_openai_chat(messages=messages, model=model, temperature=temperature, api_key=api_key)
+    # Optional debug logging controlled by env var
+    if os.getenv("AGENT_LLM_DEBUG", "").lower() in ("1", "true", "yes"):
+        try:
+            print("[LLM DEBUG] Messages:", messages)
+            print("[LLM DEBUG] Raw response:", raw)
+        except Exception:
+            pass
+
+    try:
+        return json.loads(raw)
+    except Exception:
+        # If parsing failed, return empty list signaling no LLM suggestions
+        return []
