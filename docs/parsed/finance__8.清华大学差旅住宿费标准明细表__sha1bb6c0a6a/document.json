@@ -1,0 +1,68 @@
+{
+  "doc_id": "finance__8.清华大学差旅住宿费标准明细表__sha1bb6c0a6a",
+  "status": "partial",
+  "source": {
+    "file_name": "8.清华大学差旅住宿费标准明细表.docx",
+    "file_type": "docx",
+    "file_size_bytes": 61967,
+    "file_path": "D:\\finance\\finance-agent\\docs\\raw\\8.清华大学差旅住宿费标准明细表.docx"
+  },
+  "title": "附件：",
+  "content_type": "word",
+  "sections": [
+    {
+      "heading": "",
+      "level": 1,
+      "content": "附件：\n清华大学差旅住宿费标准明细表\n单位：元/人·天\n（参考文件：《关于印发<中央和国家机关工作人员赴地方差旅住宿费标准明细表>的通知》（财行【2016】71号））\n说明:\n1、因公务出差，住宿费执行中央和国家机关工作人员赴地方差旅住宿费标准。各类人员对应住宿费标准如下：\n（1）院士、文科资深教授及相当人员、二级及以上管理岗位人员及相当人员，住宿费标准执行“部级”档;\n（2）正高级专业技术职务人员、专业技术五级岗位人员、三级或四级管理岗位人员及相当人员，住宿费标准执行“司局级”档;\n（3）其余人员住宿费标准执行“其他人员”档。\n2、因学术交流出差，住宿费在中央和国家机关工作人员赴地方差旅住宿费标准上浮80%范围内据实报销。各类人员对应住宿费标准如下：\n（1）院士、文科资深教授及相当人员,住宿费标准执行“部级”档；\n（2）正高级专业技术职务人员、教研系列长聘副教授或50岁以上其他副高级专业技术职务人员，住宿费标准执行“司局级”档；\n（3）其他副高级专业技术职务人员及其余人员,住宿费标准执行“其他人员”档。",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "slides": [],
+  "tables": [
+    {
+      "table_id": "t1",
+      "headers": [
+        "序号",
+        "地区\n(城市)",
+        "地区\n(城市)",
+        "出差类型",
+        "住宿费标准",
+        "住宿费标准",
+        "住宿费标准",
+        "旺季地区",
+        "旺季浮动标准",
+        "旺季浮动标准",
+        "旺季浮动标准",
+        "旺季浮动标准"
+      ],
+      "row_count": 174,
+      "source_sheet": "",
+      "source_range": "table1"
+    }
+  ],
+  "images": [],
+  "warnings": [
+    {
+      "code": "NO_HEADING_STYLES",
+      "message": "No heading styles detected in document; structure may be flat.",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "author": "邓倩",
+    "created": "2019-08-15 08:14:00+00:00",
+    "modified": "2026-03-23 07:19:30+00:00",
+    "subject": "",
+    "total_paragraphs": 13,
+    "total_tables": 1,
+    "parse_duration_sec": 1.76,
+    "parser_class": "DocxParser"
+  }
+}
