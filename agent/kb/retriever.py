@@ -179,6 +179,71 @@ def search_policy(query: str, top_k: int = 3, kb_path: Optional[str | Path] = No
     if not isinstance(chunks, list) or len(chunks) == 0:
         return []
 
+    resolved_path = Path(kb_path).resolve()
+    db_path = resolved_path.parent / "chroma_db"
+    
+    # Try using ChromaDB first
+    if db_path.exists():
+        try:
+            import chromadb
+            from chromadb.utils import embedding_functions
+
+            class JinaEmbeddingFunction(embedding_functions.EmbeddingFunction):
+                def __call__(self, input: chromadb.Documents) -> chromadb.Embeddings:
+                    import torch
+                    from sentence_transformers import SentenceTransformer
+                    device = "cuda" if torch.cuda.is_available() else "cpu"
+                    model = SentenceTransformer(
+                        "jinaai/jina-embeddings-v5-text-nano-retrieval",
+                        trust_remote_code=True,
+                        device=device,
+                    )
+                    embeddings = model.encode(input, convert_to_numpy=True, show_progress_bar=False, batch_size=32)
+                    return embeddings.tolist()
+
+            client = chromadb.PersistentClient(path=str(db_path))
+            emb_fn = JinaEmbeddingFunction()
+            collection = client.get_collection(name="reimbursement_kb", embedding_function=emb_fn)
+            
+            results = collection.query(query_texts=[query], n_results=top_k)
+            
+            retrieved: List[RetrievedChunk] = []
+            if results["documents"] and results["distances"]:
+                docs = results["documents"][0]
+                metas = results["metadatas"][0] if results["metadatas"] else [{}] * len(docs)
+                distances = results["distances"][0]
+                
+                for doc, meta, distance in zip(docs, metas, distances):
+                    # distance is typically L2 or Cosine distance dependent on chromadb settings. 
+                    # usually simpler is better for score
+                    score = 1.0 / (1.0 + distance)
+                    retrieved.append(
+                        RetrievedChunk(
+                            source=meta.get("source", "未知来源"),
+                            title=meta.get("title", "未命名片段"),
+                            content=meta.get("content", doc),
+                            score=score,
+                        )
+                    )
+            if retrieved:
+                return retrieved
+
+        except Exception as e:
+            # Dropdown to dynamic embeddings if Chroma fails
+            pass
+            
+    # Fallback to dynamic embeddings
+    if not query or not query.strip():
+        return []
+
+    if kb_path is None:
+        kb_path = Path(__file__).resolve().parents[2] / "data" / "kb" / "reimbursement_kb.json"
+
+    kb_payload = _load_kb(kb_path)
+    chunks = kb_payload.get("chunks", [])
+    if not isinstance(chunks, list) or len(chunks) == 0:
+        return []
+
     # prepare texts to embed: combine title and content so title contributes to semantics
     texts: List[str] = []
     metadata: List[Dict] = []
