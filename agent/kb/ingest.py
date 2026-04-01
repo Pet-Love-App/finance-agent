@@ -179,6 +179,56 @@ def build_kb(
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Persist to chromadb
+    try:
+        import chromadb
+        from chromadb.config import Settings
+        from chromadb.utils import embedding_functions
+
+        db_path = output_file.parent / "chroma_db"
+        client = chromadb.PersistentClient(path=str(db_path))
+
+        # We'll stick to a simple sentence-transformer model in chroma instead of loading our custom one,
+        # or we could make our custom embedder to be used with chroma.
+        # But this suffices for an ingest demo that chroma does the embedding locally
+        # You specified 'jinaai/jina-embeddings-v5-text-nano-retrieval' in retriever.py, let's use it correctly.
+        class JinaEmbeddingFunction(embedding_functions.EmbeddingFunction):
+            def __call__(self, input: chromadb.Documents) -> chromadb.Embeddings:
+                import torch
+                from sentence_transformers import SentenceTransformer
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                model = SentenceTransformer(
+                    "jinaai/jina-embeddings-v5-text-nano-retrieval",
+                    trust_remote_code=True,
+                    device=device,
+                )
+                embeddings = model.encode(input, convert_to_numpy=True, show_progress_bar=False, batch_size=32)
+                return embeddings.tolist()
+                
+        emb_fn = JinaEmbeddingFunction()
+
+        collection = client.get_or_create_collection(
+            name="reimbursement_kb",
+            embedding_function=emb_fn
+        )
+        
+        # Insert them into Chroma
+        if chunks:
+            ids = [c["id"] for c in chunks]
+            documents = [(c["title"] + "\\n" + c["content"]).strip() for c in chunks]
+            metadatas = [{"source": c["source"], "title": c["title"], "content": c["content"]} for c in chunks]
+            
+            # Delete old content first to avoid duplicates across runs
+            collection.delete(ids=ids)
+            collection.upsert(
+                documents=documents,
+                metadatas=metadatas,
+                ids=ids
+            )
+    except ImportError:
+        pass
+
     return file_count, len(chunks)
 
 
