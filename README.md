@@ -162,6 +162,34 @@ AGENT_KB_MAX_CHARS=1800
 - 聊天时会先检索知识库片段，再交给 LLM 生成答案。
 - 文档更新后，重新执行一次 `ingest` 命令即可刷新知识库。
 
+### RAG Trace（JSONL）
+可选开启 RAG 评估输入记录（默认开启），用于离线评估：
+
+```bash
+# 是否写入 RAG trace（默认 1）
+AGENT_RAG_TRACE_ENABLED=1
+
+# 输出目录（默认 data/eval/traces）
+AGENT_RAG_TRACE_DIR=./data/eval/traces
+```
+
+输出文件按天分片，例如：
+
+```text
+data/eval/traces/rag_trace_20260402.jsonl
+```
+
+每行一条 JSON 记录，核心字段包含：
+- `request_id`
+- `timestamp`
+- `status`（`ok`/`error`）
+- `question`
+- `contexts[]`（`source/title/content/score`）
+- `answer`
+- `latency_ms`
+- `mode`（`llm_sync`/`llm_stream`）
+- `error`（仅错误态）
+
 ## Agent 审计配置
 可通过环境变量做“策略参数化”，避免把规则阈值硬编码在代码里：
 

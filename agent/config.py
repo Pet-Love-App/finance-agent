@@ -18,6 +18,17 @@ def _safe_csv(value: str, default: Tuple[str, ...]) -> Tuple[str, ...]:
     return items or default
 
 
+def _safe_bool(value: str, default: bool) -> bool:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
 @dataclass(frozen=True)
 class AuditConfig:
     category_overrun_threshold: float
@@ -26,6 +37,12 @@ class AuditConfig:
     enable_llm_checks: bool
     llm_model: str
     llm_temperature: float
+
+
+@dataclass(frozen=True)
+class RAGTraceConfig:
+    enabled: bool
+    trace_dir: str
 
 
 @lru_cache(maxsize=1)
@@ -49,3 +66,10 @@ def get_audit_config() -> AuditConfig:
         llm_model=llm_model,
         llm_temperature=llm_temp,
     )
+
+
+@lru_cache(maxsize=1)
+def get_rag_trace_config() -> RAGTraceConfig:
+    enabled = _safe_bool(os.getenv("AGENT_RAG_TRACE_ENABLED", "1"), True)
+    trace_dir = os.getenv("AGENT_RAG_TRACE_DIR", "").strip() or "data/eval/traces"
+    return RAGTraceConfig(enabled=enabled, trace_dir=trace_dir)

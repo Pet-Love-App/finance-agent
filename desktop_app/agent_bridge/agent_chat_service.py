@@ -4,11 +4,13 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
+from uuid import uuid4
 
 # 将仓库根目录加入 sys.path，便于导入已有 reimbursement_agent 包
 CURRENT_FILE = Path(__file__).resolve()
@@ -185,21 +187,103 @@ def _is_llm_enabled() -> bool:
     return bool(api_key) or is_local
 
 
-def _get_kb_context(message: str) -> str:
+def _is_rag_trace_enabled() -> bool:
+    try:
+        from agent.config import get_rag_trace_config  # noqa: WPS433
+
+        return bool(get_rag_trace_config().enabled)
+    except Exception:
+        return os.getenv("AGENT_RAG_TRACE_ENABLED", "1").strip().lower() in {"1", "true", "yes"}
+
+
+def _get_rag_trace_dir() -> Path:
+    try:
+        from agent.config import get_rag_trace_config  # noqa: WPS433
+
+        raw = get_rag_trace_config().trace_dir
+    except Exception:
+        raw = os.getenv("AGENT_RAG_TRACE_DIR", "").strip() or "data/eval/traces"
+
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = (PROJECT_ROOT / path).resolve()
+    return path
+
+
+def _trace_request_id(payload: Dict[str, Any]) -> str:
+    raw = str(payload.get("request_id", "")).strip()
+    return raw or uuid4().hex
+
+
+def _write_rag_trace(
+    *,
+    request_id: str,
+    status: str,
+    message: str,
+    contexts: List[Any],
+    answer: str,
+    latency_ms: int,
+    mode: str,
+    error: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> None:
+    if not _is_rag_trace_enabled():
+        return
+
+    try:
+        from agent.eval import RAGTraceStore, build_trace_record  # noqa: WPS433
+
+        record = build_trace_record(
+            request_id=request_id,
+            status=status,
+            question=message,
+            contexts=contexts,
+            answer=answer,
+            latency_ms=latency_ms,
+            mode=mode,
+            error=error,
+            meta=meta,
+        )
+        store = RAGTraceStore(base_dir=_get_rag_trace_dir())
+        store.append(record)
+    except Exception:
+        return
+
+
+def _get_kb_chunks(message: str) -> List[Any]:
     kb_path = Path(os.getenv("AGENT_KB_PATH", str(DEFAULT_KB_PATH))).resolve()
     top_k = _safe_int_env("AGENT_KB_TOP_K", 4, min_value=1)
+
+    if not kb_path.exists():
+        return []
+
+    try:
+        from agent.kb.retriever import retrieve_chunks  # noqa: WPS433
+    except ModuleNotFoundError:
+        return []
+
+    try:
+        return list(retrieve_chunks(message, kb_path=kb_path, top_k=top_k))
+    except Exception:
+        return []
+
+
+def _format_kb_context(chunks: List[Any]) -> str:
+    kb_path = Path(os.getenv("AGENT_KB_PATH", str(DEFAULT_KB_PATH))).resolve()
     max_chars = _safe_int_env("AGENT_KB_MAX_CHARS", 1800, min_value=600)
 
     if not kb_path.exists():
         return ""
 
     try:
-        from agent.kb.retriever import format_retrieved_context, retrieve_chunks  # noqa: WPS433
+        from agent.kb.retriever import format_retrieved_context  # noqa: WPS433
     except ModuleNotFoundError:
         return ""
 
+    if not chunks:
+        return ""
+
     try:
-        chunks = retrieve_chunks(message, kb_path=kb_path, top_k=top_k)
         return format_retrieved_context(chunks, max_chars=max_chars)
     except Exception:
         return ""
@@ -334,6 +418,7 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
     message = str(request.get("message", "")).strip()
     raw_payload = request.get("payload", {}) or {}
     payload = raw_payload if isinstance(raw_payload, dict) else {}
+    request_id = _trace_request_id(payload)
     history = payload.get("history", []) if isinstance(payload, dict) else []
     safe_history = history if isinstance(history, list) else []
 
@@ -351,8 +436,10 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
         return
 
     if _is_llm_enabled():
+        started = time.perf_counter()
         yield {"type": "status", "status": "正在调用 RAG 知识库检索..."}
-        kb_context = _get_kb_context(message)
+        kb_chunks = _get_kb_chunks(message)
+        kb_context = _format_kb_context(kb_chunks)
         yield {"type": "status", "status": "正在生成回答..."}
         streamed_reply = ""
         try:
@@ -360,10 +447,36 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
                 streamed_reply += chunk
                 yield {"type": "delta", "delta": chunk}
         except Exception:
-            streamed_reply = _llm_chat(message=message, history=safe_history, kb_context=kb_context)
-            for chunk in _iter_text_chunks(streamed_reply):
-                yield {"type": "delta", "delta": chunk}
+            try:
+                streamed_reply = _llm_chat(message=message, history=safe_history, kb_context=kb_context)
+                for chunk in _iter_text_chunks(streamed_reply):
+                    yield {"type": "delta", "delta": chunk}
+            except Exception as exc:
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                _write_rag_trace(
+                    request_id=request_id,
+                    status="error",
+                    message=message,
+                    contexts=kb_chunks,
+                    answer=streamed_reply,
+                    latency_ms=latency_ms,
+                    mode="llm_stream",
+                    error=str(exc),
+                    meta={"stream": True, "fallback": "llm_chat"},
+                )
+                raise
 
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        _write_rag_trace(
+            request_id=request_id,
+            status="ok",
+            message=message,
+            contexts=kb_chunks,
+            answer=streamed_reply,
+            latency_ms=latency_ms,
+            mode="llm_stream",
+            meta={"stream": True},
+        )
         yield {"type": "done", "response": {"ok": True, "reply": streamed_reply, "mode": "llm"}}                                                                        
         return
 
@@ -377,6 +490,7 @@ def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
     message = str(request.get("message", "")).strip()
     raw_payload = request.get("payload", {}) or {}
     payload = raw_payload if isinstance(raw_payload, dict) else {}
+    request_id = _trace_request_id(payload)
     history = payload.get("history", []) if isinstance(payload, dict) else []
     safe_history = history if isinstance(history, list) else []
 
@@ -385,8 +499,37 @@ def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": True, **rule_result}
 
     if _is_llm_enabled():
-        kb_context = _get_kb_context(message)
-        llm_reply = _llm_chat(message=message, history=safe_history, kb_context=kb_context)
+        started = time.perf_counter()
+        kb_chunks = _get_kb_chunks(message)
+        kb_context = _format_kb_context(kb_chunks)
+        try:
+            llm_reply = _llm_chat(message=message, history=safe_history, kb_context=kb_context)
+        except Exception as exc:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            _write_rag_trace(
+                request_id=request_id,
+                status="error",
+                message=message,
+                contexts=kb_chunks,
+                answer="",
+                latency_ms=latency_ms,
+                mode="llm_sync",
+                error=str(exc),
+                meta={"stream": False},
+            )
+            raise
+
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        _write_rag_trace(
+            request_id=request_id,
+            status="ok",
+            message=message,
+            contexts=kb_chunks,
+            answer=llm_reply,
+            latency_ms=latency_ms,
+            mode="llm_sync",
+            meta={"stream": False},
+        )
         return {"ok": True, "reply": llm_reply, "mode": "llm"}
 
     return {"ok": True, "reply": _help_text()}
