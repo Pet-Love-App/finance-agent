@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
+import signal
 import sys
 import urllib.error
 import urllib.request
@@ -10,9 +12,29 @@ from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-# 将仓库根目录加入 sys.path，便于导入已有 reimbursement_agent 包
 CURRENT_FILE = Path(__file__).resolve()
-PROJECT_ROOT = CURRENT_FILE.parents[2]  # .../agent
+
+
+def _resolve_project_root() -> Path:
+    env_root = os.getenv("AGENT_PROJECT_ROOT", "").strip()
+    if env_root:
+        candidate = Path(env_root).expanduser().resolve()
+        if candidate.exists():
+            return candidate
+
+    for parent in (CURRENT_FILE, *CURRENT_FILE.parents):
+        agent_dir = parent / "agent" / "__init__.py"
+        data_dir = parent / "data"
+        if agent_dir.exists() and data_dir.exists():
+            return parent
+
+    if len(CURRENT_FILE.parents) >= 3:
+        return CURRENT_FILE.parents[2]
+    return CURRENT_FILE.parent
+
+
+# 将仓库根目录加入 sys.path，便于导入已有 reimbursement_agent 包
+PROJECT_ROOT = _resolve_project_root()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -330,7 +352,7 @@ def _iter_text_chunks(text: str, chunk_size: int = 36) -> Iterator[str]:
         yield content[index : index + max(chunk_size, 8)]
 
 
-def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]: 
+def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
     message = str(request.get("message", "")).strip()
     raw_payload = request.get("payload", {}) or {}
     payload = raw_payload if isinstance(raw_payload, dict) else {}
@@ -342,7 +364,7 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
     if rule_result is not None:
         yield {"type": "status", "status": "正在处理审计规则..."}
         reply = str(rule_result.get("reply", ""))
-        report_markdown = str(rule_result.get("report_markdown", "") or "")     
+        report_markdown = str(rule_result.get("report_markdown", "") or "")
         for chunk in _iter_text_chunks(reply):
             yield {"type": "delta", "delta": chunk}
         if report_markdown:
@@ -364,7 +386,7 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
             for chunk in _iter_text_chunks(streamed_reply):
                 yield {"type": "delta", "delta": chunk}
 
-        yield {"type": "done", "response": {"ok": True, "reply": streamed_reply, "mode": "llm"}}                                                                        
+        yield {"type": "done", "response": {"ok": True, "reply": streamed_reply, "mode": "llm"}}
         return
 
     reply = _help_text()
@@ -392,25 +414,82 @@ def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "reply": _help_text()}
 
 
-def main() -> None:
-    raw = sys.stdin.read().strip()
-    if not raw:
-        print(json.dumps({"ok": False, "error": "empty input"}, ensure_ascii=False))
-        return
+def _configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            continue
 
+
+def _safe_write_line(line: str) -> bool:
+    try:
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
+        return True
+    except BrokenPipeError:
+        return False
+    except OSError as exc:
+        if exc.errno in {errno.EPIPE, errno.ECONNRESET}:
+            return False
+        raise
+
+
+def _emit_json(payload: Dict[str, Any]) -> bool:
+    return _safe_write_line(json.dumps(payload, ensure_ascii=False))
+
+
+def _handle_request_payload(request: Dict[str, Any]) -> bool:
+    if request.get("command") == "shutdown":
+        _emit_json({"type": "status", "status": "shutdown"})
+        return False
+
+    if bool(request.get("stream", False)):
+        for event in handle_request_stream(request):
+            if not _emit_json(event):
+                return False
+        return True
+
+    response = handle_request(request)
+    return _emit_json(response)
+
+
+def _handle_raw_request(raw: str) -> bool:
+    if not raw:
+        return True
     try:
         request = json.loads(raw)
-        if bool(request.get("stream", False)):
-            for event in handle_request_stream(request):
-                print(json.dumps(event, ensure_ascii=False), flush=True)
-            return
-        response = handle_request(request)
-        print(json.dumps(response, ensure_ascii=False))
+        if not isinstance(request, dict):
+            raise ValueError("request payload must be a JSON object")
+        return _handle_request_payload(request)
     except Exception as exc:  # pragma: no cover
-        if "request" in locals() and bool(request.get("stream", False)):
-            print(json.dumps({"type": "error", "error": str(exc)}, ensure_ascii=False), flush=True)
-            return
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        if "request" in locals() and isinstance(request, dict) and bool(request.get("stream", False)):
+            return _emit_json({"type": "error", "error": str(exc)})
+        return _emit_json({"ok": False, "error": str(exc)})
+
+
+def main() -> None:
+    _configure_stdio()
+
+    shutdown_requested = {"value": False}
+
+    def _request_shutdown(signum: int, frame: Any) -> None:
+        shutdown_requested["value"] = True
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(sig, _request_shutdown)
+        except Exception:
+            continue
+
+    for raw_line in sys.stdin:
+        if shutdown_requested["value"]:
+            break
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        if not _handle_raw_request(raw_line):
+            break
 
 
 if __name__ == "__main__":
