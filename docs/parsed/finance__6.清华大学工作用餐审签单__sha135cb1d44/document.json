@@ -1,0 +1,70 @@
+{
+  "doc_id": "finance__6.清华大学工作用餐审签单__sha135cb1d44",
+  "status": "partial",
+  "source": {
+    "file_name": "6.清华大学工作用餐审签单.docx",
+    "file_type": "docx",
+    "file_size_bytes": 13277,
+    "file_path": "D:\\finance\\finance-agent\\docs\\raw\\6.清华大学工作用餐审签单.docx"
+  },
+  "title": "清华大学工作用餐审签单",
+  "content_type": "word",
+  "sections": [
+    {
+      "heading": "",
+      "level": 1,
+      "content": "清华大学工作用餐审签单\n备注：\n\n清华大学工作用餐清单\n单位：__      _\n项目负责人签字：          经办人签字：           联系电话：",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "slides": [],
+  "tables": [
+    {
+      "table_id": "t1",
+      "headers": [
+        "单    位",
+        "",
+        "拟用餐时间",
+        ""
+      ],
+      "row_count": 5,
+      "source_sheet": "",
+      "source_range": "table1"
+    },
+    {
+      "table_id": "t2",
+      "headers": [
+        "时间：",
+        "地点："
+      ],
+      "row_count": 4,
+      "source_sheet": "",
+      "source_range": "table2"
+    }
+  ],
+  "images": [],
+  "warnings": [
+    {
+      "code": "NO_HEADING_STYLES",
+      "message": "No heading styles detected in document; structure may be flat.",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "author": "Administrator",
+    "created": "2021-07-28 07:15:00+00:00",
+    "modified": "2026-03-23 07:19:01+00:00",
+    "subject": "",
+    "total_paragraphs": 9,
+    "total_tables": 2,
+    "parse_duration_sec": 0.037,
+    "parser_class": "DocxParser"
+  }
+}

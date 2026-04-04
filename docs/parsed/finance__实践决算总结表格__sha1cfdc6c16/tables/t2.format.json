@@ -1,0 +1,10 @@
+{
+  "table_id": "t2",
+  "source_sheet": "无补贴",
+  "source_range": "A8:M8",
+  "header_rows": [
+    1
+  ],
+  "row_count": 0,
+  "col_count": 13
+}

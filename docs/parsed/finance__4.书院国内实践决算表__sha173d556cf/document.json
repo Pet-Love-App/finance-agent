@@ -1,0 +1,63 @@
+{
+  "doc_id": "finance__4.书院国内实践决算表__sha173d556cf",
+  "status": "partial",
+  "source": {
+    "file_name": "4.书院国内实践决算表.docx",
+    "file_type": "docx",
+    "file_size_bytes": 17307,
+    "file_path": "D:\\finance\\finance-agent\\docs\\raw\\4.书院国内实践决算表.docx"
+  },
+  "title": "附件2. 书院国内实践决算表",
+  "content_type": "word",
+  "sections": [
+    {
+      "heading": "",
+      "level": 1,
+      "content": "附件2. 书院国内实践决算表\n（如填写后表格超过一页，请双面打印）",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "slides": [],
+  "tables": [
+    {
+      "table_id": "t1",
+      "headers": [
+        "书院国内实践决算表",
+        "书院国内实践决算表",
+        "书院国内实践决算表",
+        "书院国内实践决算表",
+        "书院国内实践决算表",
+        "书院国内实践决算表",
+        "书院国内实践决算表"
+      ],
+      "row_count": 32,
+      "source_sheet": "",
+      "source_range": "table1"
+    }
+  ],
+  "images": [],
+  "warnings": [
+    {
+      "code": "NO_HEADING_STYLES",
+      "message": "No heading styles detected in document; structure may be flat.",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "author": "dell",
+    "created": "2023-12-20 07:33:00+00:00",
+    "modified": "2026-03-23 07:18:49+00:00",
+    "subject": "",
+    "total_paragraphs": 3,
+    "total_tables": 1,
+    "parse_duration_sec": 0.261,
+    "parser_class": "DocxParser"
+  }
+}

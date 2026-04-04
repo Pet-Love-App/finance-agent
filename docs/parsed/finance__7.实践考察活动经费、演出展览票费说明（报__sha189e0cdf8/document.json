@@ -1,0 +1,72 @@
+{
+  "doc_id": "finance__7.实践考察活动经费、演出展览票费说明（报__sha189e0cdf8",
+  "status": "partial",
+  "source": {
+    "file_name": "7.实践考察活动经费、演出展览票费说明（报.docx",
+    "file_type": "docx",
+    "file_size_bytes": 22555,
+    "file_path": "D:\\finance\\finance-agent\\docs\\raw\\7.实践考察活动经费、演出展览票费说明（报.docx"
+  },
+  "title": "附表1：",
+  "content_type": "word",
+  "sections": [
+    {
+      "heading": "",
+      "level": 1,
+      "content": "附表1：\n实践考察活动经费说明（报销用）\n\n附表2：\n演出（展览）票费情况说明（报销用）",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "slides": [],
+  "tables": [
+    {
+      "table_id": "t1",
+      "headers": [
+        "申请党支部\n（如非支部形式组织，则不需填写此格）",
+        "",
+        "党委",
+        ""
+      ],
+      "row_count": 6,
+      "source_sheet": "",
+      "source_range": "table1"
+    },
+    {
+      "table_id": "t2",
+      "headers": [
+        "申请党支部\n（如非支部形式组织，则不需填写此格）",
+        "",
+        "党委",
+        ""
+      ],
+      "row_count": 6,
+      "source_sheet": "",
+      "source_range": "table2"
+    }
+  ],
+  "images": [],
+  "warnings": [
+    {
+      "code": "NO_HEADING_STYLES",
+      "message": "No heading styles detected in document; structure may be flat.",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "author": "李 豪",
+    "created": "2022-11-24 03:53:00+00:00",
+    "modified": "2026-03-23 07:19:09+00:00",
+    "subject": "",
+    "total_paragraphs": 8,
+    "total_tables": 2,
+    "parse_duration_sec": 0.094,
+    "parser_class": "DocxParser"
+  }
+}

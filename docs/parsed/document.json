@@ -1,0 +1,30 @@
+{
+  "doc_id": "",
+  "status": "error",
+  "source": {
+    "file_name": "书院财务报销规范-苗霖霖-202508.pptx",
+    "file_type": "pptx",
+    "file_path": "D:\\finance\\finance-agent\\docs\\raw\\书院财务报销规范-苗霖霖-202508.pptx"
+  },
+  "title": "",
+  "content_type": "",
+  "sections": [],
+  "slides": [],
+  "tables": [],
+  "images": [],
+  "warnings": [],
+  "errors": [
+    {
+      "error_code": "UNHANDLED_EXCEPTION",
+      "message": "ValueError: shape is not a placeholder",
+      "loc": {
+        "type": "line",
+        "value": 0
+      }
+    }
+  ],
+  "metadata": {
+    "parse_duration_sec": 1.683,
+    "parser_class": "PptxParser"
+  }
+}

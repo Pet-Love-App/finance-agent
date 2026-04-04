@@ -1,0 +1,63 @@
+{
+  "doc_id": "finance__3.书院国内实践预算表__sha18b5b01ac",
+  "status": "partial",
+  "source": {
+    "file_name": "3.书院国内实践预算表.docx",
+    "file_type": "docx",
+    "file_size_bytes": 17384,
+    "file_path": "D:\\finance\\finance-agent\\docs\\raw\\3.书院国内实践预算表.docx"
+  },
+  "title": "附件2. 书院国内寒暑假实践预算表",
+  "content_type": "word",
+  "sections": [
+    {
+      "heading": "",
+      "level": 1,
+      "content": "附件2. 书院国内寒暑假实践预算表\n（如填写后表格超过一页，请双面打印）",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "slides": [],
+  "tables": [
+    {
+      "table_id": "t1",
+      "headers": [
+        "书院国内实践预算表",
+        "书院国内实践预算表",
+        "书院国内实践预算表",
+        "书院国内实践预算表",
+        "书院国内实践预算表",
+        "书院国内实践预算表",
+        "书院国内实践预算表"
+      ],
+      "row_count": 32,
+      "source_sheet": "",
+      "source_range": "table1"
+    }
+  ],
+  "images": [],
+  "warnings": [
+    {
+      "code": "NO_HEADING_STYLES",
+      "message": "No heading styles detected in document; structure may be flat.",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "author": "dell",
+    "created": "2023-12-20 07:33:00+00:00",
+    "modified": "2026-03-23 07:18:43+00:00",
+    "subject": "",
+    "total_paragraphs": 3,
+    "total_tables": 1,
+    "parse_duration_sec": 0.118,
+    "parser_class": "DocxParser"
+  }
+}

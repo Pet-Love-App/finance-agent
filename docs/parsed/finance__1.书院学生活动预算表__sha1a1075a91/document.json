@@ -1,0 +1,52 @@
+{
+  "doc_id": "finance__1.书院学生活动预算表__sha1a1075a91",
+  "status": "partial",
+  "source": {
+    "file_name": "1.书院学生活动预算表.docx",
+    "file_type": "docx",
+    "file_size_bytes": 16075,
+    "file_path": "D:\\finance\\finance-agent\\docs\\raw\\1.书院学生活动预算表.docx"
+  },
+  "title": "",
+  "content_type": "word",
+  "sections": [],
+  "slides": [],
+  "tables": [
+    {
+      "table_id": "t1",
+      "headers": [
+        "书院学生活动预算表",
+        "书院学生活动预算表",
+        "书院学生活动预算表",
+        "书院学生活动预算表",
+        "书院学生活动预算表",
+        "书院学生活动预算表"
+      ],
+      "row_count": 20,
+      "source_sheet": "",
+      "source_range": "table1"
+    }
+  ],
+  "images": [],
+  "warnings": [
+    {
+      "code": "NO_HEADING_STYLES",
+      "message": "No heading styles detected in document; structure may be flat.",
+      "loc": {
+        "type": "paragraph",
+        "value": 0
+      }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "author": "dell",
+    "created": "2025-02-20 03:53:00+00:00",
+    "modified": "2026-03-23 07:18:29+00:00",
+    "subject": "",
+    "total_paragraphs": 1,
+    "total_tables": 1,
+    "parse_duration_sec": 0.569,
+    "parser_class": "DocxParser"
+  }
+}

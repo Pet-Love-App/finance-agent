@@ -1,0 +1,26 @@
+{
+  "table_id": "s16_t1",
+  "source_sheet": "slide16",
+  "header_rows": [
+    1
+  ],
+  "row_count": 5,
+  "col_count": 3,
+  "coord_map": {
+    "0,0": "slide16",
+    "0,1": "slide16",
+    "0,2": "slide16",
+    "1,0": "slide16",
+    "1,1": "slide16",
+    "1,2": "slide16",
+    "2,0": "slide16",
+    "2,1": "slide16",
+    "2,2": "slide16",
+    "3,0": "slide16",
+    "3,1": "slide16",
+    "3,2": "slide16",
+    "4,0": "slide16",
+    "4,1": "slide16",
+    "4,2": "slide16"
+  }
+}

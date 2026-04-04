@@ -1,0 +1,19 @@
+{
+  "table_id": "t2",
+  "source_range": "table2",
+  "header_rows": [
+    1
+  ],
+  "row_count": 4,
+  "col_count": 2,
+  "coord_map": {
+    "0,0": "table2_row2_col1",
+    "0,1": "table2_row2_col2",
+    "1,0": "table2_row3_col1",
+    "1,1": "table2_row3_col2",
+    "2,0": "table2_row4_col1",
+    "2,1": "table2_row4_col2",
+    "3,0": "table2_row5_col1",
+    "3,1": "table2_row5_col2"
+  }
+}
