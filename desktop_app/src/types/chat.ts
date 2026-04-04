@@ -3,6 +3,10 @@ export type AgentChatResponse = {
   reply?: string;
   report_json?: Record<string, unknown>;
   report_markdown?: string;
+  mode?: "llm" | "task";
+  task_type?: "qa" | "reimburse" | "final_account" | "budget";
+  task_result?: Record<string, unknown>;
+  task_progress?: Array<Record<string, unknown>>;
   error?: string;
 };
 
