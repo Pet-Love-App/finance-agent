@@ -1,0 +1,178 @@
+{
+  "kb_name": "finance",
+  "raw_dir": "D:\\finance\\finance-agent\\docs\\raw",
+  "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed",
+  "total": 10,
+  "success": 0,
+  "partial": 10,
+  "error": 0,
+  "results": [
+    {
+      "file_path": "D:\\finance\\finance-agent\\docs\\raw\\1.书院学生活动预算表.docx",
+      "doc_id": "finance__1.书院学生活动预算表__sha1a1075a91",
+      "status": "partial",
+      "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed\\finance__1.书院学生活动预算表__sha1a1075a91",
+      "tables": [
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__1.书院学生活动预算表__sha1a1075a91\\tables\\t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__1.书院学生活动预算表__sha1a1075a91\\tables\\t1.format.json"
+        }
+      ],
+      "title": "",
+      "warnings_count": 1,
+      "errors_count": 0
+    },
+    {
+      "file_path": "D:\\finance\\finance-agent\\docs\\raw\\2.书院学生活动决算表.docx",
+      "doc_id": "finance__2.书院学生活动决算表__sha16c5ca035",
+      "status": "partial",
+      "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed\\finance__2.书院学生活动决算表__sha16c5ca035",
+      "tables": [
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__2.书院学生活动决算表__sha16c5ca035\\tables\\t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__2.书院学生活动决算表__sha16c5ca035\\tables\\t1.format.json"
+        }
+      ],
+      "title": "附件3. 书院学生活动决算表",
+      "warnings_count": 1,
+      "errors_count": 0
+    },
+    {
+      "file_path": "D:\\finance\\finance-agent\\docs\\raw\\3.书院国内实践预算表.docx",
+      "doc_id": "finance__3.书院国内实践预算表__sha18b5b01ac",
+      "status": "partial",
+      "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed\\finance__3.书院国内实践预算表__sha18b5b01ac",
+      "tables": [
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__3.书院国内实践预算表__sha18b5b01ac\\tables\\t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__3.书院国内实践预算表__sha18b5b01ac\\tables\\t1.format.json"
+        }
+      ],
+      "title": "附件2. 书院国内寒暑假实践预算表",
+      "warnings_count": 1,
+      "errors_count": 0
+    },
+    {
+      "file_path": "D:\\finance\\finance-agent\\docs\\raw\\4.书院国内实践决算表.docx",
+      "doc_id": "finance__4.书院国内实践决算表__sha173d556cf",
+      "status": "partial",
+      "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed\\finance__4.书院国内实践决算表__sha173d556cf",
+      "tables": [
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__4.书院国内实践决算表__sha173d556cf\\tables\\t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__4.书院国内实践决算表__sha173d556cf\\tables\\t1.format.json"
+        }
+      ],
+      "title": "附件2. 书院国内实践决算表",
+      "warnings_count": 1,
+      "errors_count": 0
+    },
+    {
+      "file_path": "D:\\finance\\finance-agent\\docs\\raw\\5.书院国内实践决算表示例.docx",
+      "doc_id": "finance__5.书院国内实践决算表示例__sha1c075072e",
+      "status": "partial",
+      "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed\\finance__5.书院国内实践决算表示例__sha1c075072e",
+      "tables": [
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__5.书院国内实践决算表示例__sha1c075072e\\tables\\t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__5.书院国内实践决算表示例__sha1c075072e\\tables\\t1.format.json"
+        }
+      ],
+      "title": "附件2. 书院国内实践决算表",
+      "warnings_count": 1,
+      "errors_count": 0
+    },
+    {
+      "file_path": "D:\\finance\\finance-agent\\docs\\raw\\6.清华大学工作用餐审签单.docx",
+      "doc_id": "finance__6.清华大学工作用餐审签单__sha135cb1d44",
+      "status": "partial",
+      "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed\\finance__6.清华大学工作用餐审签单__sha135cb1d44",
+      "tables": [
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__6.清华大学工作用餐审签单__sha135cb1d44\\tables\\t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__6.清华大学工作用餐审签单__sha135cb1d44\\tables\\t1.format.json"
+        },
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__6.清华大学工作用餐审签单__sha135cb1d44\\tables\\t2.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__6.清华大学工作用餐审签单__sha135cb1d44\\tables\\t2.format.json"
+        }
+      ],
+      "title": "清华大学工作用餐审签单",
+      "warnings_count": 1,
+      "errors_count": 0
+    },
+    {
+      "file_path": "D:\\finance\\finance-agent\\docs\\raw\\7.实践考察活动经费、演出展览票费说明（报.docx",
+      "doc_id": "finance__7.实践考察活动经费、演出展览票费说明（报__sha189e0cdf8",
+      "status": "partial",
+      "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed\\finance__7.实践考察活动经费、演出展览票费说明（报__sha189e0cdf8",
+      "tables": [
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__7.实践考察活动经费、演出展览票费说明（报__sha189e0cdf8\\tables\\t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__7.实践考察活动经费、演出展览票费说明（报__sha189e0cdf8\\tables\\t1.format.json"
+        },
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__7.实践考察活动经费、演出展览票费说明（报__sha189e0cdf8\\tables\\t2.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__7.实践考察活动经费、演出展览票费说明（报__sha189e0cdf8\\tables\\t2.format.json"
+        }
+      ],
+      "title": "附表1：",
+      "warnings_count": 1,
+      "errors_count": 0
+    },
+    {
+      "file_path": "D:\\finance\\finance-agent\\docs\\raw\\8.清华大学差旅住宿费标准明细表.docx",
+      "doc_id": "finance__8.清华大学差旅住宿费标准明细表__sha1bb6c0a6a",
+      "status": "partial",
+      "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed\\finance__8.清华大学差旅住宿费标准明细表__sha1bb6c0a6a",
+      "tables": [
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__8.清华大学差旅住宿费标准明细表__sha1bb6c0a6a\\tables\\t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__8.清华大学差旅住宿费标准明细表__sha1bb6c0a6a\\tables\\t1.format.json"
+        }
+      ],
+      "title": "附件：",
+      "warnings_count": 1,
+      "errors_count": 0
+    },
+    {
+      "file_path": "D:\\finance\\finance-agent\\docs\\raw\\书院财务报销规范-苗霖霖-202508.pptx",
+      "doc_id": "finance__书院财务报销规范-苗霖霖-202508__sha1438df7e5",
+      "status": "partial",
+      "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed\\finance__书院财务报销规范-苗霖霖-202508__sha1438df7e5",
+      "tables": [
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__书院财务报销规范-苗霖霖-202508__sha1438df7e5\\tables\\s15_t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__书院财务报销规范-苗霖霖-202508__sha1438df7e5\\tables\\s15_t1.format.json"
+        },
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__书院财务报销规范-苗霖霖-202508__sha1438df7e5\\tables\\s16_t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__书院财务报销规范-苗霖霖-202508__sha1438df7e5\\tables\\s16_t1.format.json"
+        }
+      ],
+      "title": "2025年08月",
+      "warnings_count": 60,
+      "errors_count": 0
+    },
+    {
+      "file_path": "D:\\finance\\finance-agent\\docs\\raw\\实践决算总结表格.xlsx",
+      "doc_id": "finance__实践决算总结表格__sha1cfdc6c16",
+      "status": "partial",
+      "parsed_dir": "D:\\finance\\finance-agent\\docs\\parsed\\finance__实践决算总结表格__sha1cfdc6c16",
+      "tables": [
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__实践决算总结表格__sha1cfdc6c16\\tables\\t1.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__实践决算总结表格__sha1cfdc6c16\\tables\\t1.format.json"
+        },
+        {
+          "csv": "D:\\finance\\finance-agent\\docs\\parsed\\finance__实践决算总结表格__sha1cfdc6c16\\tables\\t2.csv",
+          "format": "D:\\finance\\finance-agent\\docs\\parsed\\finance__实践决算总结表格__sha1cfdc6c16\\tables\\t2.format.json"
+        }
+      ],
+      "title": "实践决算总结表格",
+      "warnings_count": 14,
+      "errors_count": 0
+    }
+  ],
+  "manifest_path": "D:\\finance\\finance-agent\\docs\\parsed\\manifest.json"
+}

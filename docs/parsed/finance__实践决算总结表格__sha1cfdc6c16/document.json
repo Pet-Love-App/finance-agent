@@ -1,0 +1,262 @@
+{
+  "doc_id": "finance__实践决算总结表格__sha1cfdc6c16",
+  "status": "partial",
+  "source": {
+    "file_name": "实践决算总结表格.xlsx",
+    "file_type": "xlsx",
+    "file_size_bytes": 10197,
+    "file_path": "D:\\finance\\finance-agent\\docs\\raw\\实践决算总结表格.xlsx"
+  },
+  "title": "实践决算总结表格",
+  "content_type": "excel",
+  "sections": [],
+  "slides": [],
+  "tables": [
+    {
+      "table_id": "t1",
+      "headers": [
+        "序号",
+        "姓名",
+        "学号",
+        "飞机票",
+        "飞机票",
+        "火车票",
+        "火车票",
+        "住宿",
+        "住宿",
+        "其他",
+        "其他",
+        "应报金额",
+        "实报金额"
+      ],
+      "row_count": 1,
+      "source_sheet": "无补贴",
+      "source_range": "A1:M2"
+    },
+    {
+      "table_id": "t2",
+      "headers": [
+        "合计",
+        "col_2",
+        "col_3",
+        "col_4",
+        "col_5",
+        "col_6",
+        "col_7",
+        "col_8",
+        "col_9",
+        "col_10",
+        "col_11",
+        "col_12",
+        "0"
+      ],
+      "row_count": 0,
+      "source_sheet": "无补贴",
+      "source_range": "A8:M8"
+    }
+  ],
+  "images": [],
+  "warnings": [
+    {
+      "code": "EMPTY_ROWS_SKIPPED",
+      "message": "Sheet '无补贴': 5 consecutive empty rows before row 8.",
+      "loc": {
+        "type": "cell",
+        "value": "A3",
+        "extra": {
+          "sheet": "无补贴",
+          "count": 5
+        }
+      }
+    },
+    {
+      "code": "MERGED_CELLS_EXPANDED",
+      "message": "Sheet '无补贴': 9 merged region(s), 9 cell(s) filled with top-left value. Strategy: fill-from-top-left.",
+      "loc": {
+        "type": "sheet",
+        "value": "无补贴",
+        "extra": {
+          "merged_ranges": [
+            "D1:E1",
+            "H1:I1",
+            "L1:L2",
+            "J1:K1",
+            "C1:C2",
+            "B1:B2",
+            "M1:M2",
+            "F1:G1",
+            "A1:A2"
+          ],
+          "strategy": "fill-from-top-left"
+        }
+      }
+    },
+    {
+      "code": "MULTIPLE_TABLES_DETECTED",
+      "message": "Sheet '无补贴': 2 table block(s) detected (separated by 5+ empty rows).",
+      "loc": {
+        "type": "sheet",
+        "value": "无补贴",
+        "extra": {
+          "block_ranges": [
+            "A1:M2",
+            "A8:M8"
+          ]
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 2 has empty header, named 'col_2'.",
+      "loc": {
+        "type": "cell",
+        "value": "B8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 3 has empty header, named 'col_3'.",
+      "loc": {
+        "type": "cell",
+        "value": "C8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 4 has empty header, named 'col_4'.",
+      "loc": {
+        "type": "cell",
+        "value": "D8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 5 has empty header, named 'col_5'.",
+      "loc": {
+        "type": "cell",
+        "value": "E8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 6 has empty header, named 'col_6'.",
+      "loc": {
+        "type": "cell",
+        "value": "F8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 7 has empty header, named 'col_7'.",
+      "loc": {
+        "type": "cell",
+        "value": "G8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 8 has empty header, named 'col_8'.",
+      "loc": {
+        "type": "cell",
+        "value": "H8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 9 has empty header, named 'col_9'.",
+      "loc": {
+        "type": "cell",
+        "value": "I8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 10 has empty header, named 'col_10'.",
+      "loc": {
+        "type": "cell",
+        "value": "J8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 11 has empty header, named 'col_11'.",
+      "loc": {
+        "type": "cell",
+        "value": "K8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    },
+    {
+      "code": "EMPTY_HEADER",
+      "message": "Table t2: column 12 has empty header, named 'col_12'.",
+      "loc": {
+        "type": "cell",
+        "value": "L8",
+        "extra": {
+          "sheet": "无补贴"
+        }
+      }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "sheet_names": [
+      "无补贴"
+    ],
+    "total_tables": 2,
+    "format_meta": {
+      "workbook": "实践决算总结表格.xlsx",
+      "sheets": {
+        "无补贴": {
+          "merged_cells": [
+            "D1:E1",
+            "H1:I1",
+            "L1:L2",
+            "J1:K1",
+            "C1:C2",
+            "B1:B2",
+            "M1:M2",
+            "F1:G1",
+            "A1:A2"
+          ],
+          "number_formats": {
+            "C": [
+              "@"
+            ]
+          }
+        }
+      }
+    },
+    "parse_duration_sec": 1.962,
+    "parser_class": "ExcelParser"
+  }
+}
