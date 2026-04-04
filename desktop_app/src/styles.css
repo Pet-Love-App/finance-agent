@@ -192,6 +192,107 @@ body {
   border: 1px solid var(--border);
 }
 
+.task-result-block {
+  margin-top: 12px;
+}
+
+.task-type-label {
+  font-size: 13px;
+  color: var(--text-main);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.task-output-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-output-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.task-history-block {
+  margin-top: 12px;
+}
+
+.task-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.task-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.task-clear-btn {
+  margin-top: 0 !important;
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+}
+
+.task-history-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  background: #fff;
+}
+
+.task-history-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.task-history-type {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.task-history-status {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.task-history-status.running {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.task-history-status.success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.task-history-status.failed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.task-history-input {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.task-history-error {
+  font-size: 11px;
+  color: #b91c1c;
+  margin-bottom: 6px;
+}
+
 .status-block p:first-child {
   font-size: 12px;
   font-weight: 600;

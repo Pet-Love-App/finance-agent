@@ -6,6 +6,7 @@ import os
 import re
 import signal
 import sys
+import textwrap
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
@@ -46,6 +47,301 @@ SYSTEM_PROMPT = (
 )
 
 DEFAULT_KB_PATH = PROJECT_ROOT / "data" / "kb" / "reimbursement_kb.json"
+
+WORKSPACE_SKIP_DIRS = {
+    ".git",
+    ".idea",
+    ".vscode",
+    "node_modules",
+    "dist",
+    "build",
+    "__pycache__",
+    ".venv",
+    "venv",
+}
+
+
+def _safe_workspace_root(payload: Dict[str, Any]) -> Optional[Path]:
+    workspace_raw = str(payload.get("workspace_dir", "")).strip()
+    if not workspace_raw:
+        return None
+    try:
+        root = Path(workspace_raw).expanduser().resolve()
+    except Exception:
+        return None
+    if not root.exists() or not root.is_dir():
+        return None
+    return root
+
+
+def _safe_workspace_target(root: Path, relative_path: str) -> Path:
+    rel = str(relative_path or "").strip().replace("\\", "/")
+    if not rel:
+        raise ValueError("路径不能为空")
+    target = (root / rel).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("禁止访问目录外路径") from exc
+    return target
+
+
+def _workspace_tree_text(root: Path, *, max_files: int = 120) -> str:
+    rows: List[str] = []
+    count = 0
+    for current, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in WORKSPACE_SKIP_DIRS and not d.startswith(".")]
+        rel_dir = Path(current).resolve().relative_to(root)
+        rel_prefix = "" if str(rel_dir) == "." else str(rel_dir).replace("\\", "/") + "/"
+        for name in sorted(files):
+            if name.startswith("."):
+                continue
+            rows.append(rel_prefix + name)
+            count += 1
+            if count >= max_files:
+                rows.append("... (更多文件已省略)")
+                return "\n".join(rows)
+    return "\n".join(rows) if rows else "(空目录)"
+
+
+def _workspace_read(root: Path, relative_path: str) -> str:
+    target = _safe_workspace_target(root, relative_path)
+    if not target.exists() or not target.is_file():
+        raise FileNotFoundError(f"文件不存在: {relative_path}")
+    return target.read_text(encoding="utf-8")
+
+
+def _workspace_write(root: Path, relative_path: str, content: str) -> None:
+    target = _safe_workspace_target(root, relative_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+
+
+def _workspace_append(root: Path, relative_path: str, content: str) -> None:
+    target = _safe_workspace_target(root, relative_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as f:
+        f.write(content)
+
+
+def _workspace_replace(root: Path, relative_path: str, old: str, new: str) -> int:
+    source = _workspace_read(root, relative_path)
+    if old not in source:
+        return 0
+    updated = source.replace(old, new)
+    _workspace_write(root, relative_path, updated)
+    return source.count(old)
+
+
+def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
+    candidates = re.findall(r"\{[\s\S]*\}", text)
+    for block in reversed(candidates):
+        try:
+            parsed = json.loads(block)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            continue
+    return None
+
+
+def _workspace_execute_actions(root: Path, actions: List[Dict[str, Any]]) -> List[str]:
+    logs: List[str] = []
+    for item in actions[:12]:
+        action = str(item.get("action", "")).strip()
+        rel = str(item.get("path", "")).strip()
+        if action == "list_files":
+            logs.append("[list_files] 已生成目录树")
+            continue
+        if action == "read_file":
+            content = _workspace_read(root, rel)
+            preview = content[:600]
+            logs.append(f"[read_file] {rel}\n{preview}")
+            continue
+        if action == "write_file":
+            content = str(item.get("content", ""))
+            _workspace_write(root, rel, content)
+            logs.append(f"[write_file] {rel} ({len(content)} chars)")
+            continue
+        if action == "append_file":
+            content = str(item.get("content", ""))
+            _workspace_append(root, rel, content)
+            logs.append(f"[append_file] {rel} (+{len(content)} chars)")
+            continue
+        if action == "replace_text":
+            old = str(item.get("old", ""))
+            new = str(item.get("new", ""))
+            replaced = _workspace_replace(root, rel, old, new)
+            logs.append(f"[replace_text] {rel} replacements={replaced}")
+            continue
+        logs.append(f"[skip] 未知 action: {action}")
+    return logs
+
+
+def _parse_workspace_command(message: str) -> Optional[Dict[str, Any]]:
+    text = message.strip()
+    if text.startswith("/list"):
+        return {"reply": "目录如下：", "actions": [{"action": "list_files"}]}
+
+    if text.startswith("/read "):
+        rel = text[6:].strip()
+        return {"reply": f"读取文件: {rel}", "actions": [{"action": "read_file", "path": rel}]}
+
+    if text.startswith("/write "):
+        lines = text.splitlines()
+        rel = lines[0][7:].strip()
+        content = "\n".join(lines[1:])
+        return {
+            "reply": f"写入文件: {rel}",
+            "actions": [{"action": "write_file", "path": rel, "content": content}],
+        }
+
+    if text.startswith("/append "):
+        lines = text.splitlines()
+        rel = lines[0][8:].strip()
+        content = "\n".join(lines[1:])
+        return {
+            "reply": f"追加文件: {rel}",
+            "actions": [{"action": "append_file", "path": rel, "content": content}],
+        }
+
+    if text.startswith("/replace "):
+        lines = text.splitlines()
+        rel = lines[0][9:].strip()
+        body = "\n".join(lines[1:])
+        marker_old = "---OLD---"
+        marker_new = "---NEW---"
+        if marker_old in body and marker_new in body:
+            old_part = body.split(marker_old, 1)[1]
+            old_text, new_text = old_part.split(marker_new, 1)
+            return {
+                "reply": f"替换文件: {rel}",
+                "actions": [
+                    {
+                        "action": "replace_text",
+                        "path": rel,
+                        "old": old_text.strip("\n"),
+                        "new": new_text.strip("\n"),
+                    }
+                ],
+            }
+    return None
+
+
+def _run_workspace_agent(message: str, payload: Dict[str, Any], history: List[Dict[str, str]]) -> Dict[str, Any]:
+    workspace_root = _safe_workspace_root(payload)
+    if workspace_root is None:
+        return {
+            "ok": False,
+            "error": "未绑定有效目录，请先拖拽文件夹到桌宠后再对话。",
+        }
+
+    directory_tree = _workspace_tree_text(workspace_root)
+
+    command_plan = _parse_workspace_command(message)
+    if command_plan is not None:
+        logs = _workspace_execute_actions(workspace_root, command_plan.get("actions", []))
+        if command_plan.get("actions") and command_plan["actions"][0].get("action") == "list_files":
+            return {
+                "ok": True,
+                "reply": f"{command_plan['reply']}\n\n{directory_tree}",
+                "mode": "workspace",
+            }
+        return {
+            "ok": True,
+            "reply": f"{command_plan['reply']}\n\n" + "\n\n".join(logs),
+            "mode": "workspace",
+        }
+
+    if _is_llm_enabled():
+        recent_history = history[-8:] if history else []
+        history_text = "\n".join(
+            f"{item.get('role', 'user')}: {item.get('content', '')}" for item in recent_history
+        )
+        planner_prompt = textwrap.dedent(
+            f"""
+            你是本地代码编辑代理，需要在指定目录内操作文件。
+            目录根路径: {workspace_root}
+            当前目录树（节选）:
+            {directory_tree}
+
+            对话历史（最近）:
+            {history_text or '(无)'}
+
+            用户请求:
+            {message}
+
+            请仅返回 JSON 对象，不要加解释文字。格式：
+            {{
+              "reply": "给用户的简短说明",
+              "actions": [
+                {{"action": "list_files"}},
+                {{"action": "read_file", "path": "relative/path"}},
+                {{"action": "write_file", "path": "relative/path", "content": "..."}},
+                {{"action": "append_file", "path": "relative/path", "content": "..."}},
+                {{"action": "replace_text", "path": "relative/path", "old": "...", "new": "..."}}
+              ]
+            }}
+
+            规则：
+            1) path 必须是相对路径。
+            2) 若需要改文件，优先 replace_text；若文件不存在再 write_file。
+            3) 若用户只是询问，则 actions 可为空。
+            """
+        ).strip()
+
+        planner_raw = _llm_chat(message=planner_prompt, history=[], kb_context="")
+        parsed = _extract_json_block(planner_raw)
+        if parsed is None:
+            return {
+                "ok": True,
+                "reply": planner_raw,
+                "mode": "workspace",
+            }
+
+        actions = parsed.get("actions", [])
+        safe_actions = [item for item in actions if isinstance(item, dict)] if isinstance(actions, list) else []
+        logs = _workspace_execute_actions(workspace_root, safe_actions)
+
+        if any(str(item.get("action", "")).strip() == "list_files" for item in safe_actions):
+            logs.append(directory_tree)
+
+        reply = str(parsed.get("reply", "已完成目录操作。"))
+        if logs:
+            reply += "\n\n" + "\n\n".join(logs)
+        return {
+            "ok": True,
+            "reply": reply,
+            "mode": "workspace",
+        }
+
+    return {
+        "ok": True,
+        "mode": "workspace",
+        "reply": (
+            "当前未启用 LLM 规划。可用命令：\n"
+            "/list\n"
+            "/read 相对路径\n"
+            "/write 相对路径 + 换行后文件内容\n"
+            "/append 相对路径 + 换行后追加内容\n"
+            "/replace 相对路径 + 换行后使用 ---OLD--- 与 ---NEW--- 标记"
+        ),
+    }
+
+
+def _extract_task_request(message: str, payload: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, Any]]:
+    task_type = str(payload.get("task_type", "")).strip().lower()
+    task_payload = payload.get("task_payload", payload)
+    if isinstance(task_payload, dict) and task_type:
+        return task_type, task_payload
+
+    if message.startswith("/task "):
+        parts = message.split(maxsplit=2)
+        task_type = parts[1].strip().lower() if len(parts) > 1 else ""
+        if task_type:
+            return task_type, payload
+
+    return None, payload
 
 
 def _get_llm_base_url() -> str:
@@ -189,12 +485,36 @@ def _run_audit(budget_source: Any, actual_source: Any) -> Dict[str, Any]:
     }
 
 
+def _run_v2_task(task_type: str, task_payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        from agent import EventBus, TaskDispatcher  # noqa: WPS433
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "任务调度模式依赖缺失，请确认已安装项目依赖并同步到当前 Python 环境。"
+        ) from exc
+
+    event_bus = EventBus()
+    progress_events: List[Dict[str, Any]] = []
+    event_bus.subscribe("task_progress", lambda evt: progress_events.append(evt))
+    dispatcher = TaskDispatcher(event_bus)
+    result = dispatcher.dispatch(task_type, task_payload)
+    return {
+        "reply": f"任务已完成：{task_type}",
+        "mode": "task",
+        "task_type": task_type,
+        "task_result": result,
+        "task_progress": progress_events,
+    }
+
+
 def _help_text() -> str:
     return (
         "你可以这样和我对话：\n"
         "1) 输入“运行sample审计”触发内置示例审计；\n"
         "2) 输入“如何修复高风险问题”等规则咨询；\n"
-        "3) 传入 payload.budget_source / payload.actual_source 做真实数据审计。"
+        "3) 传入 payload.budget_source / payload.actual_source 做真实数据审计；\n"
+        "4) 传入 payload.task_type（qa/reimburse/final_account/budget）触发新图任务。"
+        "\n5) 传入 payload.workspace_mode=true + payload.workspace_dir 使用目录编辑工具模式。"
     )
 
 
@@ -359,6 +679,32 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
     history = payload.get("history", []) if isinstance(payload, dict) else []
     safe_history = history if isinstance(history, list) else []
 
+    if bool(payload.get("workspace_mode", False)):
+        yield {"type": "status", "status": "正在处理目录编辑任务..."}
+        workspace_result = _run_workspace_agent(message, payload, safe_history)
+        if not workspace_result.get("ok", True):
+            yield {"type": "error", "error": str(workspace_result.get("error", "目录任务失败"))}
+            return
+        reply = str(workspace_result.get("reply", "已处理"))
+        for chunk in _iter_text_chunks(reply):
+            yield {"type": "delta", "delta": chunk}
+        yield {"type": "done", "response": {"ok": True, **workspace_result}}
+        return
+
+    task_type, task_payload = _extract_task_request(message, payload)
+    if task_type:
+        yield {"type": "status", "status": f"正在执行任务: {task_type}"}
+        task_resp = _run_v2_task(task_type, task_payload)
+        for step in task_resp.get("task_progress", []):
+            step_name = str(step.get("step", ""))
+            tool_name = str(step.get("tool_name", ""))
+            yield {"type": "status", "status": f"步骤: {step_name} | Tool: {tool_name}"}
+        reply = str(task_resp.get("reply", "任务完成"))
+        for chunk in _iter_text_chunks(reply):
+            yield {"type": "delta", "delta": chunk}
+        yield {"type": "done", "response": {"ok": True, **task_resp}}
+        return
+
     yield {"type": "status", "status": "正在分析意图..."}
     rule_result = _rule_reply(message, payload)
     if rule_result is not None:
@@ -401,6 +747,13 @@ def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
     payload = raw_payload if isinstance(raw_payload, dict) else {}
     history = payload.get("history", []) if isinstance(payload, dict) else []
     safe_history = history if isinstance(history, list) else []
+
+    if bool(payload.get("workspace_mode", False)):
+        return _run_workspace_agent(message, payload, safe_history)
+
+    task_type, task_payload = _extract_task_request(message, payload)
+    if task_type:
+        return {"ok": True, **_run_v2_task(task_type, task_payload)}
 
     rule_result = _rule_reply(message, payload)
     if rule_result is not None:

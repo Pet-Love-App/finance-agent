@@ -1,0 +1,255 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+        -webkit-user-select: none;
+        user-select: none;
+        pointer-events: auto;
+      }
+      .wrap {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: auto;
+      }
+      .pet {
+        width: 96px;
+        height: 96px;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        animation: float 2.4s ease-in-out infinite;
+        transition: transform 120ms ease;
+        overflow: hidden;
+        background: rgba(0, 0, 0, 0.02);
+        pointer-events: auto;
+        border-radius: 8px;
+        touch-action: none;
+      }
+      #pet-lottie {
+        width: 96px;
+        height: 96px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 36px;
+        pointer-events: none;
+      }
+      .pet:hover {
+        transform: translateY(-1px) scale(1.02);
+      }
+      .pet.drag-over {
+        outline: 2px dashed rgba(99, 102, 241, 0.8);
+        outline-offset: 2px;
+        border-radius: 14px;
+      }
+      @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-3px); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="pet" id="pet-btn">
+        <div id="pet-lottie">🐱</div>
+      </div>
+    </div>
+    <script id="pet-main-script">
+      console.log('[Pet] Window initializing...');
+      console.log('[Pet] petApi available:', typeof window.petApi);
+      
+      const animationData = null;
+      const fallbackEmoji = () => {
+        const box = document.getElementById('pet-lottie');
+        if (box) {
+          box.textContent = '🐱';
+          box.style.display = 'flex';
+          box.style.alignItems = 'center';
+          box.style.justifyContent = 'center';
+          box.style.fontSize = '36px';
+        }
+      };
+
+      if (window.lottie) {
+        try {
+          if (!animationData) {
+            fallbackEmoji();
+          } else {
+            const container = document.getElementById('pet-lottie');
+            if (container) {
+              container.textContent = '';
+            }
+            window.lottie.loadAnimation({
+              container,
+              renderer: 'svg',
+              loop: true,
+              autoplay: true,
+              animationData,
+            });
+          }
+        } catch {
+          fallbackEmoji();
+        }
+      } else {
+        fallbackEmoji();
+      }
+
+      const btn = document.getElementById('pet-btn');
+      if (btn) {
+        console.log('[Pet] Setting up pointer handlers...');
+        let isMoving = false;
+        let movedDistance = 0;
+        let activePointerId = null;
+
+        const onPointerMove = (event) => {
+          if (!isMoving) return;
+          if (activePointerId !== null && event.pointerId !== activePointerId) return;
+          
+          movedDistance += Math.abs(event.movementX) + Math.abs(event.movementY);
+          console.log('[Pet] Pointer move:', { x: event.screenX, y: event.screenY, distance: movedDistance });
+          
+          if (window.petApi && typeof window.petApi.moveTo === 'function') {
+            window.petApi.moveTo(event.screenX, event.screenY).catch(err => {
+              console.error('[Pet] moveTo error:', err);
+            });
+          }
+        };
+
+        const stopMoving = (event) => {
+          if (!isMoving) return;
+          if (event && activePointerId !== null && event.pointerId !== activePointerId) return;
+          
+          console.log('[Pet] Stopping move, distance:', movedDistance);
+          isMoving = false;
+          if (activePointerId !== null) {
+            try { btn.releasePointerCapture(activePointerId); } catch (e) {}
+          }
+          activePointerId = null;
+          
+          if (window.petApi && typeof window.petApi.endMove === 'function') {
+            window.petApi.endMove().catch(err => {
+              console.error('[Pet] endMove error:', err);
+            });
+          }
+          
+          if (movedDistance < 6 && window.petApi && typeof window.petApi.openChatWindow === 'function') {
+            console.log('[Pet] Opening chat window (click detected)');
+            window.petApi.openChatWindow().catch(err => {
+              console.error('[Pet] openChatWindow error:', err);
+            });
+          }
+        };
+
+        btn.addEventListener('pointerdown', (event) => {
+          if (event.button !== 0) return;
+          
+          console.log('[Pet] Pointer down:', event.pointerId);
+          try { btn.setPointerCapture(event.pointerId); } catch (e) {}
+          movedDistance = 0;
+          isMoving = true;
+          activePointerId = event.pointerId;
+          
+          if (window.petApi && typeof window.petApi.beginMove === 'function') {
+            window.petApi.beginMove(event.screenX, event.screenY).catch(err => {
+              console.error('[Pet] beginMove error:', err);
+            });
+          }
+        });
+
+        btn.addEventListener('pointerup', stopMoving);
+        btn.addEventListener('pointercancel', stopMoving);
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', stopMoving);
+        document.addEventListener('pointercancel', stopMoving);
+
+        btn.addEventListener('dragover', (event) => {
+          event.preventDefault();
+          btn.classList.add('drag-over');
+        });
+
+        btn.addEventListener('dragleave', () => {
+          btn.classList.remove('drag-over');
+        });
+
+        const normalizeDroppedPath = (input) => {
+          const raw = String(input || '').trim();
+          if (!raw) return '';
+          const firstLine = raw.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
+          if (!firstLine) return '';
+
+          if (/^file:\/\//i.test(firstLine)) {
+            try {
+              let parsed = decodeURIComponent(firstLine.replace(/^file:\/+/i, ''));
+              parsed = parsed.replace(/^localhost\//i, '');
+              if (/^[A-Za-z]:/.test(parsed)) {
+                return parsed;
+              }
+              return parsed.startsWith('/') ? parsed : '/' + parsed;
+            } catch {
+              return '';
+            }
+          }
+
+          if (/^[A-Za-z]:[\\/]/.test(firstLine)) {
+            return firstLine;
+          }
+
+          return '';
+        };
+
+        const extractDropPath = (event) => {
+          const dataTransfer = event && event.dataTransfer ? event.dataTransfer : null;
+          if (!dataTransfer) return '';
+
+          const uriList = normalizeDroppedPath(dataTransfer.getData('text/uri-list'));
+          if (uriList) return uriList;
+
+          const plainText = normalizeDroppedPath(dataTransfer.getData('text/plain'));
+          if (plainText) return plainText;
+
+          const files = dataTransfer.files ? Array.from(dataTransfer.files) : [];
+          const first = files.length > 0 ? files[0] : null;
+          const filePath = first && first.path ? String(first.path).trim() : '';
+          return filePath;
+        };
+
+        btn.addEventListener('drop', async (event) => {
+          event.preventDefault();
+          btn.classList.remove('drag-over');
+          const dropPath = extractDropPath(event);
+          if (!dropPath) return;
+
+          if (window.petApi && typeof window.petApi.setWorkspaceDir === 'function') {
+            const result = await window.petApi.setWorkspaceDir(dropPath);
+            if (!result || !result.ok) {
+              alert((result && result.message) || '目录绑定失败');
+              return;
+            }
+            if (typeof window.petApi.openChatWindow === 'function') {
+              await window.petApi.openChatWindow();
+            }
+          }
+        });
+      }
+
+      window.addEventListener('dblclick', async () => {
+        console.log('[Pet] Double click detected');
+        if (window.petApi && typeof window.petApi.pickWorkspaceDir === 'function') {
+          await window.petApi.pickWorkspaceDir();
+        }
+      });
+    </script>
+  </body>
+</html>

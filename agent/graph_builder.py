@@ -12,6 +12,7 @@ from .nodes import (
     llm_verification_node,
     report_generator_node,
 )
+from .graphs.main_graph import build_main_graph
 from .state import AgentState
 
 
@@ -34,3 +35,7 @@ def build_graph() -> Any:
     graph.add_edge("Report_Generator", END)
 
     return graph.compile()
+
+
+def build_graph_v2() -> Any:
+    return build_main_graph()
