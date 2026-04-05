@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { FilePreview, TemplatePreview } from "../types/preview";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -7,39 +8,111 @@ type Props = {
   preview: FilePreview | null;
 };
 
+function buildColumnWidths(rows: string[][]): number[] {
+  if (rows.length === 0) return [];
+  const columnCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
+  const widths = Array.from({ length: columnCount }, () => 120);
+
+  for (let col = 0; col < columnCount; col += 1) {
+    let maxLen = 4;
+    for (let row = 0; row < rows.length; row += 1) {
+      const value = (rows[row]?.[col] || "").trim();
+      if (!value) continue;
+      maxLen = Math.max(maxLen, Math.min(36, value.length));
+    }
+    widths[col] = Math.max(92, Math.min(360, maxLen * 9 + 24));
+  }
+  return widths;
+}
+
+function toExcelColumnLabel(index: number): string {
+  let current = index + 1;
+  let label = "";
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    current = Math.floor((current - 1) / 26);
+  }
+  return label;
+}
+
+function isLikelyNumericCell(value: string): boolean {
+  const text = value.trim();
+  if (!text) return false;
+  return /^[-+]?((\d+(\.\d+)?)|(\.\d+))%?$/.test(text.replace(/,/g, ""));
+}
+
 function renderExcel(preview: TemplatePreview) {
   return preview.sheets.map((sheet) => (
     <section key={sheet.name} className="sheet-card">
       <h3>{sheet.name}</h3>
-      <div className="table-wrap">
-        <table>
-          <tbody>
-            {sheet.rows.length === 0 ? (
+      <div className="table-wrap template-html-block">
+        {sheet.rows.length === 0 ? (
+          <table className="excel-preview-table">
+            <tbody>
               <tr>
                 <td>空工作表</td>
               </tr>
-            ) : (
-              sheet.rows.map((row, rowIndex) => (
-                <tr key={`${sheet.name}-${rowIndex}`}>
-                  {row.map((cell, cellIndex) => (
-                    <td key={`${sheet.name}-${rowIndex}-${cellIndex}`}>{cell}</td>
+            </tbody>
+          </table>
+        ) : (
+          (() => {
+            const widths = buildColumnWidths(sheet.rows);
+            return (
+              <table className="excel-preview-table">
+                <colgroup>
+                  <col style={{ width: "60px" }} />
+                  {widths.map((width, colIndex) => (
+                    <col key={`${sheet.name}-col-${colIndex}`} style={{ width: `${width}px` }} />
                   ))}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th className="excel-index-cell">#</th>
+                    {Array.from({ length: widths.length }, (_, cellIndex) => (
+                      <th key={`${sheet.name}-col-header-${cellIndex}`}>{toExcelColumnLabel(cellIndex)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sheet.rows.map((row, rowIndex) => (
+                    <tr key={`${sheet.name}-${rowIndex}`}>
+                      <th className="excel-row-index">{rowIndex + 1}</th>
+                      {Array.from({ length: widths.length }, (_, cellIndex) => {
+                        const cell = row[cellIndex] ?? "";
+                        const isEmpty = !String(cell).trim();
+                        const isNumeric = isLikelyNumericCell(cell);
+                        return (
+                          <td
+                            key={`${sheet.name}-${rowIndex}-${cellIndex}`}
+                            className={
+                              isEmpty ? "excel-cell-empty" : isNumeric ? "excel-cell-number" : undefined
+                            }
+                          >
+                            {cell ? <span className="excel-cell-text" title={cell}>{cell}</span> : "∅"}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()
+        )}
       </div>
     </section>
   ));
 }
 
-function renderDocx(preview: TemplatePreview) {
+function renderDocLike(preview: TemplatePreview) {
   return (
     <section className="docx-card">
-      <h3>文档段落</h3>
-      {preview.textSections.length === 0 ? (
-        <p className="placeholder">未解析出正文内容</p>
+      <h3>文档内容</h3>
+      {preview.htmlContent ? (
+        <div className="template-html-block" dangerouslySetInnerHTML={{ __html: preview.htmlContent }} />
+      ) : preview.textSections.length === 0 ? (
+        <p className="placeholder">未解析出正文内容，建议转为 docx 后重试。</p>
       ) : (
         preview.textSections.map((block, index) => <p key={index}>{block}</p>)
       )}
@@ -58,18 +131,76 @@ function renderTemplate(preview: TemplatePreview) {
         </div>
       )}
 
-      {preview.fileType === "docx" ? renderDocx(preview) : renderExcel(preview)}
+      {preview.fileType === "xlsx" || preview.fileType === "xls" ? renderExcel(preview) : renderDocLike(preview)}
     </>
   );
 }
 
 export function PreviewPanel({ preview }: Props) {
+  const [pdfPage, setPdfPage] = useState(1);
+  const [pdfZoom, setPdfZoom] = useState(100);
+
+  useEffect(() => {
+    setPdfPage(1);
+    setPdfZoom(100);
+  }, [preview?.kind === "template" ? preview.data.filePath : ""]);
+
   if (!preview) {
     return <div className="empty-state">请选择文件开始预览</div>;
   }
 
   if (preview.kind === "template") {
     const data = preview.data;
+    if (data.fileType === "pdf") {
+      const safePage = Math.max(1, Math.floor(pdfPage || 1));
+      const safeZoom = Math.max(50, Math.min(300, Math.floor(pdfZoom || 100)));
+      const src = data.fileUrl ? `${data.fileUrl}#page=${safePage}&zoom=${safeZoom}` : "";
+
+      return (
+        <div className="preview-panel">
+          {data.warnings.length > 0 && (
+            <div className="warning-box">
+              {data.warnings.map((warning, index) => (
+                <p key={index}>{warning}</p>
+              ))}
+            </div>
+          )}
+          <section className="docx-card">
+            <div className="pdf-toolbar">
+              <h3>PDF 预览</h3>
+              <div className="pdf-controls">
+                <label>
+                  页码
+                  <input
+                    type="number"
+                    min={1}
+                    value={safePage}
+                    onChange={(event) => setPdfPage(Math.max(1, Number(event.target.value) || 1))}
+                  />
+                </label>
+                <label>
+                  缩放
+                  <input
+                    type="range"
+                    min={50}
+                    max={300}
+                    step={10}
+                    value={safeZoom}
+                    onChange={(event) => setPdfZoom(Number(event.target.value))}
+                  />
+                </label>
+                <span>{safeZoom}%</span>
+              </div>
+            </div>
+            {data.fileUrl ? (
+              <iframe className="pdf-preview-frame" src={src} title={data.filePath} />
+            ) : (
+              <p className="placeholder">当前 PDF 无法内嵌显示，请使用系统应用打开。</p>
+            )}
+          </section>
+        </div>
+      );
+    }
     return <div className="preview-panel">{renderTemplate(data)}</div>;
   }
 

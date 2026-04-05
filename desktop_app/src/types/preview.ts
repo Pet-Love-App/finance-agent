@@ -1,14 +1,17 @@
 export type SheetPreview = {
   name: string;
   rows: string[][];
+  html?: string;
 };
 
 export type TemplatePreview = {
   filePath: string;
-  fileType: "xlsx" | "xls" | "docx" | "unknown";
+  fileType: "xlsx" | "xls" | "docx" | "doc" | "pdf" | "unknown";
   updatedAt: string;
   textSections: string[];
   sheets: SheetPreview[];
+  htmlContent?: string;
+  fileUrl?: string;
   warnings: string[];
 };
 

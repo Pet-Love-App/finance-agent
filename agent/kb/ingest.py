@@ -13,6 +13,7 @@ from pptx import Presentation
 
 
 SUPPORTED_SUFFIXES = {".txt", ".md", ".docx", ".pptx", ".xlsx", ".xls"}
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[。！？!?；;])")
 
 
 def _clean_text(text: str) -> str:
@@ -98,36 +99,63 @@ def _split_chunks(text: str, *, chunk_size: int, overlap: int) -> List[str]:
         return []
 
     paragraphs = [para.strip() for para in normalized.split("\n\n") if para.strip()]
-    chunks: List[str] = []
-    current = ""
+    units: List[str] = []
+
+    def _split_by_sentence(para: str) -> List[str]:
+        if len(para) <= chunk_size:
+            return [para]
+        raw_parts = [part.strip() for part in _SENTENCE_BOUNDARY_RE.split(para) if part.strip()]
+        if not raw_parts:
+            raw_parts = [para]
+
+        refined: List[str] = []
+        for part in raw_parts:
+            if len(part) <= chunk_size:
+                refined.append(part)
+                continue
+            start = 0
+            while start < len(part):
+                end = min(start + chunk_size, len(part))
+                piece = part[start:end].strip()
+                if piece:
+                    refined.append(piece)
+                if end >= len(part):
+                    break
+                start = end
+        return refined
 
     for para in paragraphs:
-        candidate = f"{current}\n\n{para}".strip() if current else para
-        if len(candidate) <= chunk_size:
-            current = candidate
+        units.extend(_split_by_sentence(para))
+
+    chunks: List[str] = []
+    current_units: List[str] = []
+    current_len = 0
+
+    for unit in units:
+        separator_len = 2 if current_units else 0
+        projected_len = current_len + separator_len + len(unit)
+        if projected_len <= chunk_size:
+            if current_units:
+                current_len += 2
+            current_units.append(unit)
+            current_len += len(unit)
             continue
 
-        if current:
-            chunks.append(current)
+        if current_units:
+            chunks.append("\n\n".join(current_units).strip())
 
-        if len(para) <= chunk_size:
-            current = para
+        if overlap > 0 and chunks:
+            tail = chunks[-1][-overlap:].strip()
+            current_units = [tail, unit] if tail else [unit]
+            current_len = len("\n\n".join(current_units))
         else:
-            start = 0
-            while start < len(para):
-                end = min(start + chunk_size, len(para))
-                piece = para[start:end].strip()
-                if piece:
-                    chunks.append(piece)
-                if end >= len(para):
-                    break
-                start = max(end - overlap, start + 1)
-            current = ""
+            current_units = [unit]
+            current_len = len(unit)
 
-    if current:
-        chunks.append(current)
+    if current_units:
+        chunks.append("\n\n".join(current_units).strip())
 
-    return chunks
+    return [chunk for chunk in chunks if chunk]
 
 
 def _iter_files(source_dir: Path) -> Iterable[Path]:
@@ -183,7 +211,6 @@ def build_kb(
     # Persist to chromadb
     try:
         import chromadb
-        from chromadb.config import Settings
         from chromadb.utils import embedding_functions
 
         db_path = output_file.parent / "chroma_db"
@@ -195,14 +222,11 @@ def build_kb(
         # You specified 'jinaai/jina-embeddings-v5-text-nano-retrieval' in retriever.py, let's use it correctly.
         class JinaEmbeddingFunction(embedding_functions.EmbeddingFunction):
             def __call__(self, input: chromadb.Documents) -> chromadb.Embeddings:
-                import torch
-                from sentence_transformers import SentenceTransformer
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                model = SentenceTransformer(
-                    "jinaai/jina-embeddings-v5-text-nano-retrieval",
-                    trust_remote_code=True,
-                    device=device,
-                )
+                from agent.kb.retriever import _get_model
+
+                model = _get_model()
+                if model is None:
+                    raise RuntimeError("Embedding model is not available")
                 embeddings = model.encode(input, convert_to_numpy=True, show_progress_bar=False, batch_size=32)
                 return embeddings.tolist()
                 

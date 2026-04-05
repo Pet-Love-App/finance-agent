@@ -1,15 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { Button, Input, Space, Typography } from "antd";
+import { Button, Input, Select, Space, Typography } from "antd";
 
 type ChatMessage = { role: "user" | "agent"; content: string };
+type ChatSessionMeta = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+};
 const DEFAULT_CHAT_MESSAGE: ChatMessage = {
   role: "agent",
-  content: "可让我在绑定目录内读取/修改文件。建议描述：文件路径 + 修改目标。",
+  content: "你好，我是桌宠助手。先绑定工作目录，然后告诉我“文件路径 + 想改成什么”，我会一步步帮你处理。",
 };
+
+const QUICK_PROMPTS = [
+  "先列出当前目录文件",
+  "读取 src/main.ts 并概述结构",
+  "把 README 标题改成“智能报销助手”",
+];
 
 export function PetChatWindow() {
   const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_CHAT_MESSAGE]);
+  const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [workspaceDir, setWorkspaceDir] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
@@ -17,9 +32,12 @@ export function PetChatWindow() {
   const lastSyncedMessagesRef = useRef<string>("");
 
   useEffect(() => {
-    document.body.classList.add("pet-route-body", "pet-chat-body");
+    document.body.classList.add("pet-route-body");
+    const previousTitle = document.title;
+    document.title = "桌宠对话";
     return () => {
-      document.body.classList.remove("pet-route-body", "pet-chat-body");
+      document.body.classList.remove("pet-route-body");
+      document.title = previousTitle;
     };
   }, []);
 
@@ -50,25 +68,37 @@ export function PetChatWindow() {
   }, []);
 
   useEffect(() => {
-    if (!window.petChatApi || typeof window.petChatApi.getChatHistory !== "function") {
+    const api = window.petChatApi;
+    if (!api || typeof api.getChatHistory !== "function") {
       return;
     }
 
-    let unsubscribe: (() => void) | null = null;
+    let unsubscribeHistory: (() => void) | null = null;
+    let unsubscribeSessions: (() => void) | null = null;
 
     const hydrateHistory = async () => {
-      const history = (await window.petChatApi.getChatHistory()) as ChatMessage[] | undefined;
+      if (typeof api.listChatSessions === "function") {
+        const sessionState = await api.listChatSessions();
+        if (sessionState && Array.isArray(sessionState.sessions)) {
+          setSessions(sessionState.sessions as ChatSessionMeta[]);
+          setActiveSessionId(
+            typeof sessionState.activeSessionId === "string" ? sessionState.activeSessionId : null
+          );
+        }
+      }
+
+      const history = (await api.getChatHistory()) as ChatMessage[] | undefined;
       if (Array.isArray(history) && history.length > 0) {
         lastSyncedMessagesRef.current = JSON.stringify(history);
         setMessages(history);
       } else {
         lastSyncedMessagesRef.current = JSON.stringify([DEFAULT_CHAT_MESSAGE]);
-        void window.petChatApi.setChatHistory([DEFAULT_CHAT_MESSAGE]);
+        void api.setChatHistory([DEFAULT_CHAT_MESSAGE]);
       }
     };
 
-    if (typeof window.petChatApi.subscribeChatHistory === "function") {
-      unsubscribe = window.petChatApi.subscribeChatHistory((history: unknown) => {
+    if (typeof api.subscribeChatHistory === "function") {
+      unsubscribeHistory = api.subscribeChatHistory((history: unknown) => {
         if (!Array.isArray(history)) return;
         const serialized = JSON.stringify(history);
         if (serialized === lastSyncedMessagesRef.current) return;
@@ -77,9 +107,23 @@ export function PetChatWindow() {
       });
     }
 
+    if (typeof api.subscribeChatSessions === "function") {
+      unsubscribeSessions = api.subscribeChatSessions((payload: unknown) => {
+        if (!payload || typeof payload !== "object") return;
+        const sessionsPayload = payload as { sessions?: unknown; activeSessionId?: unknown };
+        if (Array.isArray(sessionsPayload.sessions)) {
+          setSessions(sessionsPayload.sessions as ChatSessionMeta[]);
+        }
+        setActiveSessionId(
+          typeof sessionsPayload.activeSessionId === "string" ? sessionsPayload.activeSessionId : null
+        );
+      });
+    }
+
     void hydrateHistory();
     return () => {
-      if (unsubscribe) unsubscribe();
+      if (unsubscribeHistory) unsubscribeHistory();
+      if (unsubscribeSessions) unsubscribeSessions();
     };
   }, []);
 
@@ -124,8 +168,8 @@ export function PetChatWindow() {
     });
   };
 
-  const sendMessage = async () => {
-    const text = input.trim();
+  const sendMessage = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text || !window.petChatApi || chatLoading) return;
 
     const supportsStream =
@@ -234,15 +278,87 @@ export function PetChatWindow() {
     }
   };
 
+  const onUsePrompt = (text: string) => {
+    setInput(text);
+  };
+
+  const onQuickSend = async (text: string) => {
+    if (chatLoading) return;
+    await sendMessage(text);
+  };
+
+  const onCreateSession = async () => {
+    if (chatLoading) return;
+    if (!window.petChatApi || typeof window.petChatApi.createChatSession !== "function") return;
+    const created = (await window.petChatApi.createChatSession()) as
+      | { ok?: boolean; activeSessionId?: string; history?: ChatMessage[] }
+      | undefined;
+    if (!created?.ok) return;
+    const history = Array.isArray(created.history) && created.history.length > 0 ? created.history : [DEFAULT_CHAT_MESSAGE];
+    lastSyncedMessagesRef.current = JSON.stringify(history);
+    setMessages(history);
+    if (typeof created.activeSessionId === "string") {
+      setActiveSessionId(created.activeSessionId);
+    }
+    if (history.length === 1 && history[0].content === DEFAULT_CHAT_MESSAGE.content) {
+      void window.petChatApi.setChatHistory(history);
+    }
+  };
+
+  const onSwitchSession = async (sessionId: string) => {
+    if (chatLoading || !sessionId) return;
+    if (!window.petChatApi || typeof window.petChatApi.switchChatSession !== "function") return;
+    const result = (await window.petChatApi.switchChatSession(sessionId)) as
+      | { ok?: boolean; activeSessionId?: string; history?: ChatMessage[] }
+      | undefined;
+    if (!result?.ok) return;
+    const history = Array.isArray(result.history) && result.history.length > 0 ? result.history : [DEFAULT_CHAT_MESSAGE];
+    lastSyncedMessagesRef.current = JSON.stringify(history);
+    setMessages(history);
+    setActiveSessionId(typeof result.activeSessionId === "string" ? result.activeSessionId : sessionId);
+    if (history.length === 1 && history[0].content === DEFAULT_CHAT_MESSAGE.content) {
+      void window.petChatApi.setChatHistory(history);
+    }
+  };
+
+  const isBound = Boolean(workspaceDir);
+
   return (
     <div className="pet-chat-root">
       <header className="pet-chat-header">
         <div className="pet-chat-header-info">
           <div className="pet-chat-title">
             <span className="pet-chat-title-emoji">🤖</span>
-            <Typography.Text strong>桌宠对话框</Typography.Text>
+            <Typography.Text strong>桌宠助手</Typography.Text>
           </div>
-          <Typography.Text className="pet-chat-dir">目录：{workspaceDir || "未绑定"}</Typography.Text>
+          <Typography.Text className="pet-chat-dir" title={workspaceDir || "未绑定"}>
+            目录：{workspaceDir || "未绑定"}
+          </Typography.Text>
+        </div>
+        <div className="pet-chat-session-tools">
+          <Select
+            className="pet-chat-session-select"
+            size="small"
+            value={activeSessionId ?? undefined}
+            placeholder="选择会话"
+            onChange={(value) => void onSwitchSession(value)}
+            disabled={chatLoading || sessions.length === 0}
+            options={sessions.map((session) => ({
+              value: session.id,
+              label: `${session.title || "新会话"} (${session.messageCount})`,
+            }))}
+          />
+          <Button size="small" onClick={() => void onCreateSession()} disabled={chatLoading}>
+            新会话
+          </Button>
+        </div>
+        <div className="pet-chat-header-actions">
+          <span className={`pet-chat-badge ${isBound ? "ready" : "warn"}`}>
+            {isBound ? "已绑定" : "待绑定"}
+          </span>
+          <Button size="small" onClick={() => void onBind()} className="pet-chat-bind-btn">
+            {isBound ? "切换目录" : "绑定目录"}
+          </Button>
         </div>
         <Button
           className="pet-chat-close"
@@ -258,6 +374,7 @@ export function PetChatWindow() {
       <div className="pet-chat-body">
         {messages.map((message, index) => (
           <div key={`${message.role}-${index}`} className={`pet-chat-msg ${message.role}`}>
+            <div className="pet-chat-msg-role">{message.role === "user" ? "你" : "助手"}</div>
             {message.content}
           </div>
         ))}
@@ -265,18 +382,31 @@ export function PetChatWindow() {
       </div>
 
       <div className="pet-chat-input">
+        <div className="pet-chat-quick">
+          {QUICK_PROMPTS.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              className="pet-chat-quick-item"
+              onClick={() => onUsePrompt(prompt)}
+              onDoubleClick={() => void onQuickSend(prompt)}
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
         <Input.TextArea
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="例如：把 src/main.ts 中标题改为 智能报销助手"
+          placeholder="例如：把 src/main.ts 中标题改为“智能报销助手”"
           autoSize={{ minRows: 3, maxRows: 5 }}
         />
         <Space className="pet-chat-actions" size={8}>
-          <Button onClick={() => void onBind()}>选择目录</Button>
           <Button onClick={() => void onOpenPanel()}>打开功能面板</Button>
-          <Button type="primary" onClick={() => void sendMessage()}>
-            发送
+          <Typography.Text className="pet-chat-send-hint">Ctrl/Cmd + Enter 发送</Typography.Text>
+          <Button type="primary" onClick={() => void sendMessage()} loading={chatLoading}>
+            {chatLoading ? "处理中" : "发送"}
           </Button>
         </Space>
       </div>
