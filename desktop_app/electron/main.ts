@@ -15,6 +15,7 @@ dotenv.config({ path: path.join(process.cwd(), ".env") });
 let mainWindow: BrowserWindow | null = null;
 let petWindow: BrowserWindow | null = null;
 let petChatWindow: BrowserWindow | null = null;
+let sharedChatHistory: Array<{ role: string; content: string; status?: string }> = [];
 let watcher: FSWatcher | null = null;
 let currentFilePath: string | null = null;
 const activeChatProcesses = new Map<string, ReturnType<typeof spawn>>();
@@ -23,6 +24,26 @@ let petWorkspaceDir: string | null = null;
 let petDragState: { startMouseX: number; startMouseY: number; startWindowX: number; startWindowY: number } | null = null;
 
 const isDev = !app.isPackaged;
+const rendererDevServer = "http://localhost:5173";
+
+function normalizeRendererRoute(route: string): string {
+  const trimmed = route.trim();
+  if (!trimmed) {
+    return "/";
+  }
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+function loadRendererRoute(target: BrowserWindow, route: string): void {
+  const normalized = normalizeRendererRoute(route);
+
+  if (isDev) {
+    target.loadURL(`${rendererDevServer}/#${normalized}`);
+    return;
+  }
+
+  target.loadFile(path.join(__dirname, "../dist/index.html"), { hash: normalized });
+}
 
 function resolveLottiePlayerCode(): string {
   const candidates = new Set<string>();
@@ -227,7 +248,18 @@ function emitChatStreamEvent(chatId: string, event: StreamEvent): void {
   mainWindow.webContents.send("agent:chat:event", { chatId, ...event });
 }
 
-function invokePythonChatStream(chatId: string, request: { message: string; payload?: unknown }): void {
+function emitPetChatStreamEvent(chatId: string, event: StreamEvent): void {
+  if (!petChatWindow || petChatWindow.isDestroyed()) {
+    return;
+  }
+  petChatWindow.webContents.send("pet:chat:event", { chatId, ...event });
+}
+
+function invokePythonChatStream(
+  chatId: string,
+  request: { message: string; payload?: unknown },
+  emitEvent: (chatId: string, event: StreamEvent) => void = emitChatStreamEvent
+): void {
   const python = resolvePythonExecutable();
   const scriptPath = resolveChatBridgeScript();
 
@@ -259,21 +291,21 @@ function invokePythonChatStream(chatId: string, request: { message: string; payl
     try {
       const parsed = JSON.parse(line) as StreamEvent;
       if (parsed.type === "delta") {
-        emitChatStreamEvent(chatId, { type: "delta", delta: String(parsed.delta ?? "") });
+        emitEvent(chatId, { type: "delta", delta: String(parsed.delta ?? "") });
         return;
       }
       if (parsed.type === "status") {
-        emitChatStreamEvent(chatId, { type: "status", status: String((parsed as any).status ?? "") });
+        emitEvent(chatId, { type: "status", status: String((parsed as any).status ?? "") });
         return;
       }
       if (parsed.type === "done") {
         finalized = true;
-        emitChatStreamEvent(chatId, { type: "done", response: parsed.response });
+        emitEvent(chatId, { type: "done", response: parsed.response });
         return;
       }
       if (parsed.type === "error") {
         finalized = true;
-        emitChatStreamEvent(chatId, { type: "error", error: String(parsed.error ?? "未知错误") });
+        emitEvent(chatId, { type: "error", error: String(parsed.error ?? "未知错误") });
         return;
       }
     } catch {
@@ -300,7 +332,7 @@ function invokePythonChatStream(chatId: string, request: { message: string; payl
       return;
     }
     finalized = true;
-    emitChatStreamEvent(chatId, { type: "error", error: err.message });
+    emitEvent(chatId, { type: "error", error: err.message });
     cleanup();
   });
 
@@ -310,12 +342,12 @@ function invokePythonChatStream(chatId: string, request: { message: string; payl
     }
     if (!finalized) {
       if (code === 0) {
-        emitChatStreamEvent(chatId, {
+        emitEvent(chatId, {
           type: "error",
           error: "流式响应提前结束，未收到完成事件。",
         });
       } else {
-        emitChatStreamEvent(chatId, {
+        emitEvent(chatId, {
           type: "error",
           error: stderr || `Python 进程退出码: ${code}`,
         });
@@ -342,11 +374,7 @@ function createMainWindow(): void {
 
   mainWindow.setMenu(null);
 
-  if (isDev) {
-    mainWindow.loadURL("http://localhost:5173");
-  } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
-  }
+  loadRendererRoute(mainWindow, "/");
 
   mainWindow.on("close", (event) => {
     if (isQuitting) {
@@ -365,289 +393,7 @@ function loadPetWindowContent(): void {
   if (!petWindow || petWindow.isDestroyed()) {
     return;
   }
-
-  const petWindowHtmlPath = isDev 
-    ? path.join(app.getAppPath(), "electron", "pet-window.html")
-    : path.join(__dirname, "pet-window.html");
-  
-  petWindow.loadFile(petWindowHtmlPath);
-}
-
-function loadPetChatWindowContent(): void {
-  if (!petChatWindow || petChatWindow.isDestroyed()) {
-    return;
-  }
-
-  const html = `
-<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <style>
-      :root {
-        --bg: #0f172a;
-        --surface: #111827;
-        --surface-2: #1f2937;
-        --text: #e5e7eb;
-        --muted: #94a3b8;
-        --accent: #818cf8;
-      }
-      * { box-sizing: border-box; }
-      html, body {
-        margin: 0;
-        width: 100%;
-        height: 100%;
-        background: transparent;
-        color: var(--text);
-        font-family: "Segoe UI", "PingFang SC", sans-serif;
-      }
-      .root {
-        height: 100%;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        border-radius: 12px;
-        background: linear-gradient(180deg, rgba(17,24,39,0.95), rgba(15,23,42,0.95));
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-      }
-      .header {
-        padding: 10px 14px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-        font-size: 13px;
-        font-weight: 600;
-        -webkit-app-region: drag;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: rgba(255, 255, 255, 0.03);
-      }
-      .header-info {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-width: 0;
-        gap: 2px;
-      }
-      .close-btn {
-        -webkit-app-region: no-drag;
-        background: transparent;
-        border: none;
-        color: var(--muted);
-        font-size: 20px;
-        line-height: 1;
-        cursor: pointer;
-        padding: 4px 8px;
-        margin-left: 8px;
-        border-radius: 6px;
-        transition: all 0.2s ease;
-      }
-      .close-btn:hover {
-        background: rgba(239, 68, 68, 0.8);
-        color: white;
-      }
-      .dir {
-        color: var(--muted);
-        font-size: 11px;
-        font-weight: normal;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .chat {
-        flex: 1;
-        overflow-y: auto;
-        overflow-x: hidden;
-        padding: 14px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      .chat::-webkit-scrollbar {
-        width: 6px;
-      }
-      .chat::-webkit-scrollbar-thumb {
-        background: rgba(148, 163, 184, 0.3);
-        border-radius: 3px;
-      }
-      .msg {
-        font-size: 13px;
-        line-height: 1.5;
-        border-radius: 12px;
-        padding: 10px 14px;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      }
-      .msg.user { 
-        background: rgba(99,102,241,0.25);
-        border: 1px solid rgba(99,102,241,0.4);
-        align-self: flex-end;
-        max-width: 85%;
-        border-bottom-right-radius: 4px;
-      }
-      .msg.agent { 
-        background: rgba(30,41,59,0.8);
-        border: 1px solid rgba(148,163,184,0.15);
-        align-self: flex-start;
-        max-width: 85%;
-        border-bottom-left-radius: 4px;
-      }
-      .input {
-        border-top: 1px solid rgba(148, 163, 184, 0.2);
-        padding: 12px;
-        display: grid;
-        gap: 10px;
-        background: rgba(15,23,42,0.9);
-      }
-      textarea {
-        width: 100%;
-        min-height: 64px;
-        max-height: 120px;
-        resize: vertical;
-        border-radius: 10px;
-        border: 1px solid rgba(148,163,184,0.3);
-        background: rgba(30,41,59,0.5);
-        color: var(--text);
-        padding: 10px 12px;
-        font-size: 13px;
-        font-family: inherit;
-        outline: none;
-        transition: border-color 0.2s, background 0.2s;
-      }
-      textarea:focus {
-        border-color: var(--accent);
-        background: rgba(30,41,59,0.8);
-      }
-      textarea::-webkit-scrollbar {
-        width: 6px;
-      }
-      textarea::-webkit-scrollbar-thumb {
-        background: rgba(148, 163, 184, 0.3);
-        border-radius: 3px;
-      }
-      .row {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-        gap: 8px;
-        margin-top: 4px;
-      }
-      button {
-        border: 1px solid rgba(148,163,184,0.25);
-        background: rgba(30,41,59,0.7);
-        color: var(--text);
-        border-radius: 8px;
-        font-size: 12px;
-        font-weight: 500;
-        padding: 8px 12px;
-        cursor: pointer;
-        transition: all 0.2s;
-      }
-      button:hover {
-        background: rgba(51,65,85,0.9);
-        border-color: rgba(148,163,184,0.4);
-      }
-      button.primary {
-        border-color: rgba(99,102,241,0.5);
-        background: rgba(99,102,241,0.2);
-        color: #c7d2fe;
-      }
-      button.primary:hover {
-        background: rgba(99,102,241,0.35);
-        border-color: rgba(99,102,241,0.7);
-        box-shadow: 0 0 10px rgba(99,102,241,0.2);
-      }
-    </style>
-  </head>
-  <body>
-    <div class="root">
-      <div class="header">
-        <div class="header-info">
-          <div><span style="margin-right: 6px;">🤖</span>桌宠对话框</div>
-          <div class="dir" id="dir">目录：未绑定</div>
-        </div>
-        <button class="close-btn" id="closeBtn">&times;</button>
-      </div>
-      <div class="chat" id="chat"></div>
-      <div class="input">
-        <textarea id="text" placeholder="例如：把 src/main.ts 中标题改为 智能报销助手"></textarea>
-        <div class="row">
-          <button id="bind">选择目录</button>
-          <button id="openPanel">打开功能面板</button>
-          <button class="primary" id="send">发送</button>
-        </div>
-      </div>
-    </div>
-    <script>
-      const state = { history: [] };
-      const chatEl = document.getElementById('chat');
-      const dirEl = document.getElementById('dir');
-      const textEl = document.getElementById('text');
-
-      function append(role, content) {
-        const node = document.createElement('div');
-        node.className = 'msg ' + role;
-        node.textContent = content;
-        chatEl.appendChild(node);
-        chatEl.scrollTop = chatEl.scrollHeight;
-        state.history.push({ role, content });
-      }
-
-      async function refreshDir() {
-        if (!window.petChatApi) return;
-        const dir = await window.petChatApi.getWorkspaceDir();
-        dirEl.textContent = '目录：' + (dir || '未绑定');
-      }
-
-      async function sendMessage() {
-        const text = (textEl.value || '').trim();
-        if (!text || !window.petChatApi) return;
-        append('user', text);
-        textEl.value = '';
-        const resp = await window.petChatApi.chat(text, state.history);
-        if (!resp || !resp.ok) {
-          append('agent', '失败：' + ((resp && resp.error) || '未知错误'));
-          return;
-        }
-        append('agent', resp.reply || '已处理');
-      }
-
-      document.getElementById('send').addEventListener('click', () => { void sendMessage(); });
-      textEl.addEventListener('keydown', (event) => {
-        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-          event.preventDefault();
-          void sendMessage();
-        }
-      });
-
-      document.getElementById('openPanel').addEventListener('click', async () => {
-        if (window.petChatApi && typeof window.petChatApi.openMainWindow === 'function') {
-          await window.petChatApi.openMainWindow();
-        }
-      });
-
-      document.getElementById('closeBtn').addEventListener('click', async () => {
-        if (window.petChatApi && typeof window.petChatApi.closePetChat === 'function') {
-          await window.petChatApi.closePetChat();
-        }
-      });
-
-      document.getElementById('bind').addEventListener('click', async () => {
-        if (!window.petChatApi || typeof window.petChatApi.pickWorkspaceDir !== 'function') return;
-        await window.petChatApi.pickWorkspaceDir();
-      });
-
-      if (window.petChatApi && typeof window.petChatApi.subscribeWorkspaceUpdate === 'function') {
-        window.petChatApi.subscribeWorkspaceUpdate(() => { void refreshDir(); });
-      }
-
-      void refreshDir();
-      append('agent', '可让我在绑定目录内读取/修改文件。建议描述：文件路径 + 修改目标。');
-    </script>
-  </body>
-</html>`;
-
-  petChatWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  loadRendererRoute(petWindow, "/pet");
 }
 
 function createPetChatWindow(): void {
@@ -670,6 +416,7 @@ function createPetChatWindow(): void {
     alwaysOnTop: true,
     skipTaskbar: true,
     transparent: true,
+    backgroundColor: "#00000000",
     webPreferences: {
       preload: path.join(__dirname, "petChatPreload.js"),
       contextIsolation: true,
@@ -678,7 +425,7 @@ function createPetChatWindow(): void {
     },
   });
 
-  loadPetChatWindowContent();
+  loadRendererRoute(petChatWindow, "/pet-chat");
 
   petChatWindow.on("closed", () => {
     petChatWindow = null;
@@ -688,6 +435,15 @@ function createPetChatWindow(): void {
 function emitWorkspaceUpdated(): void {
   if (petChatWindow && !petChatWindow.isDestroyed()) {
     petChatWindow.webContents.send("pet:workspace-updated", petWorkspaceDir);
+  }
+}
+
+function emitChatHistoryUpdate(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("chat:history:update", sharedChatHistory);
+  }
+  if (petChatWindow && !petChatWindow.isDestroyed()) {
+    petChatWindow.webContents.send("chat:history:update", sharedChatHistory);
   }
 }
 
@@ -828,6 +584,46 @@ ipcMain.handle("template:getProjectDir", () => {
   return isDev ? path.join(app.getAppPath(), "..") : path.join(app.getAppPath(), "..", "..");
 });
 
+ipcMain.handle("template:pickDir", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "选择目录",
+    properties: ["openDirectory"],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { ok: false, message: "已取消" };
+  }
+  return { ok: true, dir: result.filePaths[0] };
+});
+
+ipcMain.handle("template:listDir", async (_event, targetDir: string) => {
+  const dirPath = String(targetDir ?? "");
+  if (!dirPath) {
+    return { ok: false, error: "目录不能为空" };
+  }
+  try {
+    const stat = fs.statSync(dirPath);
+    if (!stat.isDirectory()) {
+      return { ok: false, error: "目标不是目录" };
+    }
+
+    const entries = fs
+      .readdirSync(dirPath, { withFileTypes: true })
+      .map((entry) => ({
+        name: entry.name,
+        path: path.join(dirPath, entry.name),
+        isDir: entry.isDirectory(),
+      }))
+      .sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name, "zh-Hans-CN");
+      });
+
+    return { ok: true, entries };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
 ipcMain.handle("template:exportPredefined", async (_event, type: string) => {
   const root = isDev ? path.join(app.getAppPath(), "..") : path.join(app.getAppPath(), "..", "..");
   const templatesDir = path.join(root, "data", "templates");
@@ -880,6 +676,76 @@ ipcMain.handle("template:openPath", async (_event, targetPath: string) => {
     return { ok: false, message: openErr };
   }
   return { ok: true };
+});
+
+ipcMain.handle("template:readFile", async (_event, targetPath: string) => {
+  const filePath = String(targetPath ?? "");
+  if (!filePath || !fs.existsSync(filePath)) {
+    return { ok: false, error: "文件不存在" };
+  }
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) {
+      return { ok: false, error: "目标不是文件" };
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const fileType = ext ? ext.slice(1) : "unknown";
+    const updatedAt = stat.mtime.toISOString();
+    const size = stat.size;
+    const maxBytes = 10 * 1024 * 1024;
+    const buffer = fs.readFileSync(filePath);
+    const truncated = buffer.length > maxBytes;
+    const slice = truncated ? buffer.subarray(0, maxBytes) : buffer;
+
+    const imageTypes: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+      ".bmp": "image/bmp",
+      ".svg": "image/svg+xml",
+    };
+
+    if (imageTypes[ext]) {
+      if (ext === ".svg") {
+        const text = slice.toString("utf-8");
+        const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`;
+        return { ok: true, kind: "image", filePath, fileType, updatedAt, dataUrl, truncated };
+      }
+      const base64 = slice.toString("base64");
+      const dataUrl = `data:${imageTypes[ext]};base64,${base64}`;
+      return { ok: true, kind: "image", filePath, fileType, updatedAt, dataUrl, truncated };
+    }
+
+    const hasNull = slice.includes(0);
+    if (!hasNull) {
+      const content = slice.toString("utf-8");
+      return { ok: true, kind: "text", filePath, fileType, updatedAt, content, truncated };
+    }
+
+    const hexBytes = slice.subarray(0, Math.min(slice.length, 512));
+    const lines: string[] = [];
+    for (let i = 0; i < hexBytes.length; i += 16) {
+      const chunk = Array.from(hexBytes.subarray(i, i + 16))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join(" ");
+      lines.push(chunk);
+    }
+    return {
+      ok: true,
+      kind: "binary",
+      filePath,
+      fileType,
+      updatedAt,
+      size,
+      hex: lines.join("\n"),
+      truncated,
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 });
 
 ipcMain.handle("template:preview", async (_event, filePath: string) => {
@@ -942,6 +808,23 @@ ipcMain.handle("agent:chat:stop", async (_event, chatId: string) => {
   process.kill();
   activeChatProcesses.delete(chatId);
 });
+
+ipcMain.handle("chat:history:get", async () => sharedChatHistory);
+
+ipcMain.handle(
+  "chat:history:set",
+  async (_event, history: Array<{ role: string; content: string; status?: string }>) => {
+    if (Array.isArray(history)) {
+      sharedChatHistory = history.map((item) => ({
+        role: String(item.role ?? ""),
+        content: String(item.content ?? ""),
+        status: typeof item.status === "string" ? item.status : undefined,
+      }));
+      emitChatHistoryUpdate();
+    }
+    return { ok: true };
+  }
+);
 
 ipcMain.handle("pet:openMain", async () => {
   showOrCreateMainWindow();
@@ -1049,6 +932,43 @@ ipcMain.handle("pet:chat", async (_event, req: { message: string; history?: Arra
     reply: response?.reply,
     error: response?.error,
   };
+});
+
+ipcMain.handle(
+  "pet:chat:start",
+  async (_event, req: { message: string; history?: Array<{ role: string; content: string }> }) => {
+    const message = String(req?.message ?? "").trim();
+    const history = Array.isArray(req?.history) ? req.history : [];
+    if (!message) {
+      return { ok: false, error: "消息不能为空" };
+    }
+    if (!petWorkspaceDir) {
+      return { ok: false, error: "请先拖拽文件夹到桌宠，或在对话框中选择目录" };
+    }
+    const chatId = randomUUID();
+    invokePythonChatStream(
+      chatId,
+      {
+        message,
+        payload: {
+          history,
+          workspace_dir: petWorkspaceDir,
+          workspace_mode: true,
+        },
+      },
+      emitPetChatStreamEvent
+    );
+    return { ok: true, chatId };
+  }
+);
+
+ipcMain.handle("pet:chat:stop", async (_event, chatId: string) => {
+  const process = activeChatProcesses.get(chatId);
+  if (!process) {
+    return;
+  }
+  process.kill();
+  activeChatProcesses.delete(chatId);
 });
 
 app.whenReady().then(() => {

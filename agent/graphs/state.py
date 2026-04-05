@@ -22,6 +22,7 @@ class AppState(TypedDict, total=False):
     budget: Dict[str, Any]
 
     qa_answer: Dict[str, Any]
+    sandbox_result: Dict[str, Any]
     outputs: Dict[str, Any]
     result: Dict[str, Any]
 

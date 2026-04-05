@@ -9,6 +9,7 @@ TASK_QA = "qa"
 TASK_REIMBURSE = "reimburse"
 TASK_FINAL = "final_account"
 TASK_BUDGET = "budget"
+TASK_SANDBOX = "sandbox_exec"
 
 
 def intent_node(state: AppState) -> AppState:
@@ -46,4 +47,6 @@ def route_by_task(state: AppState) -> str:
         return "FinalStartNode"
     if task_type == TASK_BUDGET:
         return "BudgetStartNode"
+    if task_type == TASK_SANDBOX:
+        return "SandboxStartNode"
     return "ReimburseStartNode"

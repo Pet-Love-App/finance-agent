@@ -1,12 +1,22 @@
 ﻿import { useEffect, useRef, useState } from "react";
+import { Alert, Button, Card, Input, Select, Space, Typography } from "antd";
+import { FileOutlined, FolderOpenOutlined, FolderOutlined } from "@ant-design/icons";
 
 import { PreviewPanel } from "./components/PreviewPanel";
 import { MarkdownRenderer } from "./components/MarkdownRenderer";
 import type { AgentChatResponse, AgentChatStreamEvent, ChatMessage } from "./types/chat";
-import type { TemplatePreview } from "./types/preview";
+import type { FilePreview } from "./types/preview";
+import { useThemeMode } from "./theme";
 
 type TaskType = "qa" | "reimburse" | "final_account" | "budget";
-type PanelPage = "dashboard" | "reimburse" | "history" | "annual";
+
+type FileTreeNode = {
+  name: string;
+  path: string;
+  isDir: boolean;
+  loaded?: boolean;
+  children?: FileTreeNode[];
+};
 
 type TaskSummary = {
   taskType: TaskType;
@@ -23,27 +33,36 @@ type TaskHistoryItem = {
   error?: string;
 };
 
+const { Title, Paragraph, Text } = Typography;
+
 const TASK_HISTORY_STORAGE_KEY = "agent_task_history_v1";
 const TASK_SUMMARY_STORAGE_KEY = "agent_task_summary_v1";
+const DEFAULT_CHAT_MESSAGE: ChatMessage = {
+  role: "agent",
+  content: "可让我在绑定目录内读取/修改文件。建议描述：文件路径 + 修改目标。",
+};
 
 export default function App() {
   const bridge = window.templateApi;
   const bridgeReady = Boolean(bridge);
+  const { mode, toggleMode } = useThemeMode();
 
-  const [view, setView] = useState<"home" | "workspace">("home");
   const [currentFile, setCurrentFile] = useState<string | null>(null);
-  const [preview, setPreview] = useState<TemplatePreview | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState<FilePreview | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [inputText, setInputText] = useState("");
   const [selectedTask, setSelectedTask] = useState<TaskType>("qa");
-  const [panelPage, setPanelPage] = useState<PanelPage>("dashboard");
-  const [historyFilterTask, setHistoryFilterTask] = useState<"all" | TaskType>("all");
   const [taskSummary, setTaskSummary] = useState<TaskSummary | null>(null);
   const [taskHistory, setTaskHistory] = useState<TaskHistoryItem[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_CHAT_MESSAGE]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
+  const lastSyncedMessagesRef = useRef<string>("");
+  const [rootDir, setRootDir] = useState<string | null>(null);
+  const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
+  const [expandedPaths, setExpandedPaths] = useState<string[]>([]);
+  const [loadingPaths, setLoadingPaths] = useState<string[]>([]);
+  const [treeLoading, setTreeLoading] = useState(false);
 
   const appRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -141,7 +160,7 @@ export default function App() {
     }
 
     const unsubscribe = bridge.subscribePreviewUpdate((payload) => {
-      setPreview(payload);
+      setPreview({ kind: "template", data: payload });
     });
 
     return () => {
@@ -149,6 +168,199 @@ export default function App() {
       bridge.unwatchTemplate().catch(() => undefined);
     };
   }, [bridge]);
+
+  useEffect(() => {
+    if (!bridge || typeof bridge.getProjectDir !== "function" || typeof bridge.listDir !== "function") {
+      return;
+    }
+
+    const hydrateRoot = async () => {
+      try {
+        setTreeLoading(true);
+        const dir = await bridge.getProjectDir();
+        if (dir) {
+          setRootDir(dir);
+          const result = await bridge.listDir(dir);
+          if (result?.ok && Array.isArray(result.entries)) {
+            setTreeNodes(result.entries.map((entry: FileTreeNode) => ({ ...entry, loaded: false })));
+          } else {
+            setTreeNodes([]);
+          }
+        }
+      } finally {
+        setTreeLoading(false);
+      }
+    };
+
+    void hydrateRoot();
+  }, [bridge]);
+
+  const updateTreeNode = (
+    nodes: FileTreeNode[],
+    targetPath: string,
+    updater: (node: FileTreeNode) => FileTreeNode
+  ): FileTreeNode[] => {
+    return nodes.map((node) => {
+      if (node.path === targetPath) {
+        return updater(node);
+      }
+      if (node.children && node.children.length > 0) {
+        return { ...node, children: updateTreeNode(node.children, targetPath, updater) };
+      }
+      return node;
+    });
+  };
+
+  const loadDirectoryChildren = async (dirPath: string) => {
+    if (!bridge || typeof bridge.listDir !== "function") return;
+    if (loadingPaths.includes(dirPath)) return;
+    setLoadingPaths((prev) => [...prev, dirPath]);
+    try {
+      const result = await bridge.listDir(dirPath);
+      if (result?.ok && Array.isArray(result.entries)) {
+        setTreeNodes((prev) =>
+          updateTreeNode(prev, dirPath, (node) => ({
+            ...node,
+            loaded: true,
+            children: result.entries?.map((entry: FileTreeNode) => ({ ...entry, loaded: false })) ?? [],
+          }))
+        );
+      }
+    } finally {
+      setLoadingPaths((prev) => prev.filter((item) => item !== dirPath));
+    }
+  };
+
+  const toggleFolder = async (node: FileTreeNode) => {
+    if (!node.isDir) return;
+    const isExpanded = expandedPaths.includes(node.path);
+    if (isExpanded) {
+      setExpandedPaths((prev) => prev.filter((item) => item !== node.path));
+      return;
+    }
+    setExpandedPaths((prev) => [...prev, node.path]);
+    if (!node.loaded) {
+      await loadDirectoryChildren(node.path);
+    }
+  };
+
+  const handlePickRoot = async () => {
+    if (!bridge || typeof bridge.pickProjectDir !== "function" || typeof bridge.listDir !== "function") return;
+    setTreeLoading(true);
+    try {
+      const result = await bridge.pickProjectDir();
+      if (!result?.ok || !result.dir) {
+        return;
+      }
+      setRootDir(result.dir);
+      setExpandedPaths([]);
+      const entries = await bridge.listDir(result.dir);
+      if (entries?.ok && Array.isArray(entries.entries)) {
+        setTreeNodes(entries.entries.map((entry: FileTreeNode) => ({ ...entry, loaded: false })));
+      } else {
+        setTreeNodes([]);
+      }
+    } finally {
+      setTreeLoading(false);
+    }
+  };
+
+  const handleRefreshTree = async () => {
+    if (!rootDir || !bridge || typeof bridge.listDir !== "function") return;
+    setTreeLoading(true);
+    try {
+      const entries = await bridge.listDir(rootDir);
+      if (entries?.ok && Array.isArray(entries.entries)) {
+        setTreeNodes(entries.entries.map((entry: FileTreeNode) => ({ ...entry, loaded: false })));
+        setExpandedPaths([]);
+      } else {
+        setTreeNodes([]);
+      }
+    } finally {
+      setTreeLoading(false);
+    }
+  };
+
+  const renderTreeNodes = (nodes: FileTreeNode[], depth = 0) => {
+    return nodes.map((node) => {
+      const isExpanded = expandedPaths.includes(node.path);
+      const isLoading = loadingPaths.includes(node.path);
+      return (
+        <div key={node.path} className="file-tree-node" style={{ paddingLeft: depth * 14 + 8 }}>
+          <button
+            className={`file-tree-label${node.isDir ? " is-dir" : ""}`}
+            type="button"
+            onClick={() => {
+              if (node.isDir) {
+                void toggleFolder(node);
+              } else {
+                void handlePreviewFile(node.path);
+              }
+            }}
+            aria-expanded={node.isDir ? isExpanded : undefined}
+          >
+            <span className="file-tree-chevron" aria-hidden="true">
+              {node.isDir ? (isExpanded ? "▾" : "▸") : ""}
+            </span>
+            <span className="file-tree-icon" aria-hidden="true">
+              {node.isDir ? (isExpanded ? <FolderOpenOutlined /> : <FolderOutlined />) : <FileOutlined />}
+            </span>
+            <span className="file-tree-name">{node.name}</span>
+            {isLoading && <span className="file-tree-loading">加载中</span>}
+          </button>
+          {node.isDir && isExpanded && node.children && node.children.length > 0 && (
+            <div className="file-tree-children">{renderTreeNodes(node.children, depth + 1)}</div>
+          )}
+        </div>
+      );
+    });
+  };
+
+  useEffect(() => {
+    if (!bridge || typeof bridge.getChatHistory !== "function") {
+      return;
+    }
+
+    let unsubscribe: (() => void) | null = null;
+
+    const hydrateHistory = async () => {
+      const history = (await bridge.getChatHistory()) as ChatMessage[] | undefined;
+      if (Array.isArray(history) && history.length > 0) {
+        lastSyncedMessagesRef.current = JSON.stringify(history);
+        setMessages(history);
+      } else {
+        lastSyncedMessagesRef.current = JSON.stringify([DEFAULT_CHAT_MESSAGE]);
+        void bridge.setChatHistory([DEFAULT_CHAT_MESSAGE]);
+      }
+    };
+
+    if (typeof bridge.subscribeChatHistory === "function") {
+      unsubscribe = bridge.subscribeChatHistory((history: unknown) => {
+        if (!Array.isArray(history)) return;
+        const serialized = JSON.stringify(history);
+        if (serialized === lastSyncedMessagesRef.current) return;
+        lastSyncedMessagesRef.current = serialized;
+        setMessages(history as ChatMessage[]);
+      });
+    }
+
+    void hydrateHistory();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [bridge]);
+
+  useEffect(() => {
+    if (!bridge || typeof bridge.setChatHistory !== "function") {
+      return;
+    }
+    const serialized = JSON.stringify(messages);
+    if (serialized === lastSyncedMessagesRef.current) {
+      return;
+    }
+    lastSyncedMessagesRef.current = serialized;
+    void bridge.setChatHistory(messages);
+  }, [bridge, messages]);
 
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
@@ -382,122 +594,6 @@ export default function App() {
     setTaskHistory((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
 
-  const retryTask = async (item: TaskHistoryItem) => {
-    if (!bridge || chatLoading) return;
-
-    setSelectedTask(item.taskType);
-    setInputText(item.inputText);
-    updateTaskHistory(item.id, { status: "running", error: undefined });
-    setChatLoading(true);
-    setMessages((prev) => [...prev, { role: "agent", content: "", status: `正在重试任务: ${item.taskType}...` }]);
-
-    try {
-      const response = (await (
-        typeof (bridge as any).runAgentTask === "function"
-          ? (bridge as any).runAgentTask(item.taskType, item.payload)
-          : bridge.chatWithAgent(item.inputText, {
-              task_type: item.taskType,
-              task_payload: item.payload,
-            })
-      )) as AgentChatResponse;
-
-      if (!response.ok) {
-        replaceLastAgentMessage(`重试失败：${response.error ?? "未知错误"}`);
-        updateLastAgentMessageStatus("");
-        updateTaskHistory(item.id, { status: "failed", error: response.error ?? "未知错误" });
-        setChatLoading(false);
-        return;
-      }
-
-      let content = response.reply ?? "已处理。";
-      if (response.mode === "task" && response.task_result) {
-        content += formatTaskResult(item.taskType, response.task_result);
-        setTaskSummary({ taskType: item.taskType, result: response.task_result });
-      }
-      replaceLastAgentMessage(content);
-      updateLastAgentMessageStatus("");
-      updateTaskHistory(item.id, { status: "success", error: undefined });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      replaceLastAgentMessage(`重试异常：${message}`);
-      updateLastAgentMessageStatus("");
-      updateTaskHistory(item.id, { status: "failed", error: message });
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
-  const clearTaskHistory = () => {
-    setTaskHistory([]);
-    window.localStorage.removeItem(TASK_HISTORY_STORAGE_KEY);
-  };
-
-  const handleOpenTemplate = async (type: string, title: string) => {
-    if (!bridge) {
-      setError(
-        "当前运行环境不是 Electron 窗口，无法访问本地文件系统。请执行 `npm run dev` 并在弹出的桌面窗口中操作。"
-      );
-      return;
-    }
-
-    setError(null);
-    setLoading(true);
-    try {
-      // If we added getPredefinedTemplate to bridge:
-      const targetPath = await (bridge as any).getPredefinedTemplate(type);
-      setCurrentFile(targetPath);
-      const snapshot = await bridge.getPreview(targetPath);
-      setPreview(snapshot);
-      if (type === "budget") {
-        setSelectedTask("budget");
-        setPanelPage("annual");
-      } else if (type === "final") {
-        setSelectedTask("final_account");
-        setPanelPage("annual");
-      } else {
-        setSelectedTask("qa");
-        setPanelPage("reimburse");
-      }
-      
-      setMessages([
-        {
-          role: "agent",
-          content: `已准备好${title}环境。模板文件已创建并打开。\n\n请上传或输入相关资料（如报销单、明细数据），我将开始自动处理并填写右侧的文档。`,
-        },
-      ]);
-      setView("workspace");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOpen = async () => {
-    if (!bridge) {
-      setError(
-        "当前运行环境不是 Electron 窗口，无法访问本地文件系统。请执行 `npm run dev` 并在弹出的桌面窗口中操作。"
-      );
-      return;
-    }
-
-    setError(null);
-    setLoading(true);
-    try {
-      const selectedPath = await bridge.openTemplate();
-      if (!selectedPath) {
-        return;
-      }
-      setCurrentFile(selectedPath);
-      const snapshot = await bridge.getPreview(selectedPath);
-      setPreview(snapshot);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSend = async () => {
     if (!bridge) {
       setError("当前运行环境不是 Electron，无法与本地 Agent 通信。");
@@ -680,104 +776,122 @@ export default function App() {
     }
   };
 
-  if (view === "home") {
-    return (
-      <div className="home-layout">
-        <header className="home-header">
-          <h1>智能报销 Agent</h1>
-          <p>请选择你要执行的任务，启动对应的模板和助手。</p>
-          {error && <p className="error">错误: {error}</p>}
-        </header>
+  const handlePreviewFile = async (filePath: string) => {
+    if (!bridge) return;
+    const lower = filePath.toLowerCase();
+    const isTemplate = lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".docx");
+    try {
+      if (isTemplate) {
+        const snapshot = await bridge.getPreview(filePath);
+        setCurrentFile(filePath);
+        setPreview({ kind: "template", data: snapshot });
+        setError(null);
+        return;
+      }
 
-        <section className="feature-cards">
-          <div className="feature-card" onClick={() => handleOpenTemplate("budget", "填写预算表")}>
-            <div className="card-icon">📊</div>
-            <h2>填写预算表</h2>
-            <p>基于项目计划与其他资料，自动生成预算表格。</p>
-          </div>
-          <div className="feature-card" onClick={() => handleOpenTemplate("final", "填写决算表")}>
-            <div className="card-icon">💵</div>
-            <h2>填写决算表</h2>
-            <p>根据核销单据、发票和账单录入，生成决算结果。</p>
-          </div>
-          <div className="feature-card" onClick={() => handleOpenTemplate("compare", "预算与决算核对")}>
-            <div className="card-icon">⚖️</div>
-            <h2>决算表和预算表核对</h2>
-            <p>比对两份表单记录，发现并指出差异与异常项目。</p>
-          </div>
-        </section>
-        
-        {loading && <div className="home-loading">正在加载模板资源，请稍候...</div>}
-      </div>
-    );
-  }
+      if (typeof bridge.unwatchTemplate === "function") {
+        await bridge.unwatchTemplate();
+      }
 
-  const filteredTaskHistory =
-    historyFilterTask === "all"
-      ? taskHistory
-      : taskHistory.filter((item) => item.taskType === historyFilterTask);
+      const response = (await bridge.readFile(filePath)) as any;
+      if (!response?.ok) {
+        setError(response?.error || "预览失败");
+        return;
+      }
 
-  const runningCount = taskHistory.filter((item) => item.status === "running").length;
-  const successCount = taskHistory.filter((item) => item.status === "success").length;
-  const failedCount = taskHistory.filter((item) => item.status === "failed").length;
+      if (response.kind === "text") {
+        setPreview({
+          kind: "text",
+          filePath: response.filePath || filePath,
+          fileType: response.fileType || "unknown",
+          updatedAt: response.updatedAt || new Date().toISOString(),
+          content: response.content || "",
+          truncated: response.truncated,
+        });
+      } else if (response.kind === "image") {
+        setPreview({
+          kind: "image",
+          filePath: response.filePath || filePath,
+          fileType: response.fileType || "unknown",
+          updatedAt: response.updatedAt || new Date().toISOString(),
+          dataUrl: response.dataUrl || "",
+          truncated: response.truncated,
+        });
+      } else {
+        setPreview({
+          kind: "binary",
+          filePath: response.filePath || filePath,
+          fileType: response.fileType || "unknown",
+          updatedAt: response.updatedAt || new Date().toISOString(),
+          size: typeof response.size === "number" ? response.size : 0,
+          hex: response.hex || "",
+          truncated: response.truncated,
+        });
+      }
+
+      setCurrentFile(filePath);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   return (
     <div className="app-layout" ref={appRef}>
       <aside className="sidebar" style={{ flex: `0 0 ${sidebarWidthPx}px` }}>
-        <h1>任务工作区</h1>
-        <p>按页面处理报销问答、单次报销、历史记录与年度任务。</p>
+        <Space direction="vertical" size="small" className="sidebar-header">
+          <Title level={4}>任务工作区</Title>
+          <Paragraph>集中处理报销问答与任务执行，右侧实时预览文档。</Paragraph>
+          <Button onClick={toggleMode} size="small">
+            {mode === "dark" ? "切换浅色" : "切换深色"}
+          </Button>
+        </Space>
 
-        <div className="status-block" style={{ marginTop: 12 }}>
-          <p>功能面板</p>
-          <div className="task-output-list">
-            <button className="sidebar-btn-secondary" onClick={() => setPanelPage("dashboard")}>Dashboard</button>
-            <button className="sidebar-btn-secondary" onClick={() => setPanelPage("reimburse")}>单次报销</button>
-            <button className="sidebar-btn-secondary" onClick={() => setPanelPage("history")}>历史记录</button>
-            <button className="sidebar-btn-secondary" onClick={() => setPanelPage("annual")}>年度决算与预算</button>
+        <Card size="small" className="status-block file-tree-card">
+          <div className="file-tree-header">
+            <Text strong>文件</Text>
+            <Space size="small">
+              <Button size="small" onClick={() => void handleRefreshTree()} disabled={!bridgeReady || treeLoading}>
+                刷新
+              </Button>
+              <Button size="small" onClick={() => void handlePickRoot()} disabled={!bridgeReady || treeLoading}>
+                切换
+              </Button>
+            </Space>
           </div>
-        </div>
-        
-        <button className="sidebar-btn-secondary" onClick={() => setView("home")} disabled={loading}>
-          返回首页
-        </button>
+          <Paragraph className="file-tree-root">{rootDir ?? "未选择目录"}</Paragraph>
+          <div className="file-tree">
+            {treeLoading ? (
+              <Text className="task-output-empty">正在加载目录...</Text>
+            ) : treeNodes.length === 0 ? (
+              <Text className="task-output-empty">暂无文件</Text>
+            ) : (
+              renderTreeNodes(treeNodes)
+            )}
+          </div>
+        </Card>
 
-        <div className="status-block">
-          <p>当前文件:</p>
-          <p className="path">{currentFile ?? "未选择"}</p>
-          {currentFile && (
-            <button className="sidebar-btn-primary" onClick={handleDownload}>
-              下载此文档
-            </button>
-          )}
-        </div>
         {taskSummary && (
-          <div className="status-block task-result-block">
-            <p>最近任务结果:</p>
-            <p className="task-type-label">{taskSummary.taskType}</p>
+          <Card size="small" className="status-block task-result-block">
+            <Text strong>最近任务结果:</Text>
+            <Paragraph className="task-type-label">{taskSummary.taskType}</Paragraph>
             {getTaskOutputPaths(taskSummary.taskType, taskSummary.result).length > 0 ? (
-              <div className="task-output-list">
+              <Space direction="vertical" size="small" className="task-output-list">
                 {getTaskOutputPaths(taskSummary.taskType, taskSummary.result).map((outputPath, index) => (
-                  <button
+                  <Button
                     key={`${outputPath}-${index}`}
-                    className="sidebar-btn-secondary"
                     onClick={() => void openOutputPath(outputPath)}
                   >
                     打开输出 {index + 1}
-                  </button>
+                  </Button>
                 ))}
-              </div>
+              </Space>
             ) : (
-              <p className="task-output-empty">无可打开输出文件</p>
+              <Text className="task-output-empty">无可打开输出文件</Text>
             )}
-          </div>
+          </Card>
         )}
-        <div className="status-block task-result-block">
-          <p>任务概览</p>
-          <p className="task-output-empty">运行中: {runningCount}</p>
-          <p className="task-output-empty">成功: {successCount}</p>
-          <p className="task-output-empty">失败: {failedCount}</p>
-        </div>
-        {error && <p className="error">错误: {error}</p>}
+        {error && <Alert type="error" message={`错误: ${error}`} />}
 
         <div
           className="resize-handle resize-handle--right"
@@ -817,199 +931,7 @@ export default function App() {
       </aside>
 
       <main className="content" ref={contentRef}>
-        {panelPage === "dashboard" && (
-          <section className="chat-panel" style={{ flex: "1 1 100%" }}>
-            <div className="chat-header">
-              <h2>Dashboard</h2>
-              <button onClick={() => setPanelPage("reimburse")}>进入单次报销</button>
-            </div>
-            <div className="chat-messages-container">
-              <div className="chat-messages">
-                <div className="status-block">
-                  <p>系统概览</p>
-                  <p className="task-output-empty">当前任务类型：{selectedTask}</p>
-                  <p className="task-output-empty">最近结果：{taskSummary?.taskType ?? "暂无"}</p>
-                  <p className="task-output-empty">历史记录总数：{taskHistory.length}</p>
-                </div>
-                <div className="status-block">
-                  <p>快捷入口</p>
-                  <div className="task-output-list">
-                    <button
-                      className="sidebar-btn-primary"
-                      disabled={chatLoading}
-                      onClick={() => {
-                        setSelectedTask("qa");
-                        setInputText(getTaskDemoPrompt("qa"));
-                        setPanelPage("reimburse");
-                      }}
-                    >
-                      报销问答
-                    </button>
-                    <button
-                      className="sidebar-btn-primary"
-                      disabled={chatLoading}
-                      onClick={() => {
-                        setSelectedTask("reimburse");
-                        setInputText(getTaskDemoPrompt("reimburse"));
-                        setPanelPage("reimburse");
-                      }}
-                    >
-                      单次报销
-                    </button>
-                    <button
-                      className="sidebar-btn-primary"
-                      disabled={chatLoading}
-                      onClick={() => {
-                        setSelectedTask("final_account");
-                        setInputText(getTaskDemoPrompt("final_account"));
-                        setPanelPage("annual");
-                      }}
-                    >
-                      年度决算
-                    </button>
-                    <button
-                      className="sidebar-btn-primary"
-                      disabled={chatLoading}
-                      onClick={() => {
-                        setSelectedTask("budget");
-                        setInputText(getTaskDemoPrompt("budget"));
-                        setPanelPage("annual");
-                      }}
-                    >
-                      预算生成
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {panelPage === "history" && (
-          <section className="chat-panel" style={{ flex: "1 1 100%" }}>
-            <div className="chat-header">
-              <h2>任务历史</h2>
-              <select
-                value={historyFilterTask}
-                onChange={(event) => setHistoryFilterTask(event.target.value as "all" | TaskType)}
-                disabled={chatLoading}
-              >
-                <option value="all">全部任务</option>
-                <option value="qa">报销问答</option>
-                <option value="reimburse">单次报销</option>
-                <option value="final_account">年度决算</option>
-                <option value="budget">预算生成</option>
-              </select>
-              <button onClick={clearTaskHistory} disabled={chatLoading || taskHistory.length === 0}>
-                清空历史
-              </button>
-            </div>
-            <div className="chat-messages-container">
-              <div className="chat-messages">
-                {filteredTaskHistory.length === 0 ? (
-                  <div className="status-block">
-                    <p>暂无历史</p>
-                    <p className="task-output-empty">当前筛选条件下没有任务记录。</p>
-                  </div>
-                ) : (
-                  filteredTaskHistory.map((item) => (
-                    <div key={item.id} className="status-block">
-                      <p>{item.taskType}</p>
-                      <p className="task-output-empty">时间: {new Date(item.createdAt).toLocaleString()}</p>
-                      <p className="task-output-empty">输入: {item.inputText || "(无输入)"}</p>
-                      <p className="task-output-empty">状态: {item.status}</p>
-                      {item.error && <p className="task-history-error">错误: {item.error}</p>}
-                      <button className="sidebar-btn-secondary" onClick={() => void retryTask(item)} disabled={chatLoading}>
-                        重试该任务
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {panelPage === "annual" && (
-          <section className="chat-panel" style={{ flex: "1 1 100%" }}>
-            <div className="chat-header">
-              <h2>年度决算与预算</h2>
-              <button
-                disabled={chatLoading || !bridgeReady}
-                onClick={() => {
-                  setSelectedTask("final_account");
-                  setInputText(getTaskDemoPrompt("final_account"));
-                }}
-              >
-                准备年度决算
-              </button>
-              <button
-                disabled={chatLoading || !bridgeReady}
-                onClick={() => {
-                  setSelectedTask("budget");
-                  setInputText(getTaskDemoPrompt("budget"));
-                }}
-              >
-                准备预算生成
-              </button>
-            </div>
-
-            <div className="chat-messages-container">
-              <div className="chat-messages">
-                <div className="status-block">
-                  <p>当前年度任务</p>
-                  <p className="task-output-empty">任务类型: {selectedTask}</p>
-                  <p className="task-output-empty">建议输入: 使用下方输入框直接执行。</p>
-                </div>
-                {taskSummary && (taskSummary.taskType === "final_account" || taskSummary.taskType === "budget") && (
-                  <div className="status-block">
-                    <p>最近年度输出</p>
-                    <div className="task-output-list">
-                      {getTaskOutputPaths(taskSummary.taskType, taskSummary.result).map((outputPath, index) => (
-                        <button
-                          key={`${outputPath}-${index}`}
-                          className="sidebar-btn-secondary"
-                          onClick={() => void openOutputPath(outputPath)}
-                        >
-                          打开输出 {index + 1}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="chat-input-row">
-              <input
-                value={inputText}
-                onChange={(event) => setInputText(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    void handleSend();
-                  }
-                }}
-                placeholder={`输入任务说明，当前任务：${selectedTask}`}
-                disabled={!bridgeReady || chatLoading}
-              />
-              <button
-                onClick={() => {
-                  if (selectedTask !== "final_account" && selectedTask !== "budget") {
-                    setSelectedTask("final_account");
-                  }
-                  void handleSend();
-                }}
-                disabled={!bridgeReady || chatLoading}
-              >
-                {chatLoading ? "执行中..." : "执行年度任务"}
-              </button>
-            </div>
-          </section>
-        )}
-
-        {panelPage === "reimburse" && (
-          <>
-            <section className="chat-panel" style={{ flex: `0 0 ${chatPanePercent}%` }}>
+        <section className="chat-panel" style={{ flex: `0 0 ${chatPanePercent}%` }}>
               <div
                 className="resize-handle resize-handle--right"
                 role="separator"
@@ -1047,23 +969,21 @@ export default function App() {
                 }}
               />
               <div className="chat-header">
-                <h2>单次报销与问答</h2>
-                <select
+                <Title level={4}>对话</Title>
+                <Select
                   value={selectedTask}
-                  onChange={(event) => setSelectedTask(event.target.value as TaskType)}
+                  onChange={(value) => setSelectedTask(value as TaskType)}
                   disabled={chatLoading || !bridgeReady}
-                >
-                  <option value="qa">报销问答</option>
-                  <option value="reimburse">单次报销</option>
-                  <option value="final_account">年度决算</option>
-                  <option value="budget">预算生成</option>
-                </select>
-                <button
-                  onClick={() => setInputText(getTaskDemoPrompt(selectedTask))}
-                  disabled={chatLoading || !bridgeReady}
-                >
-                  填入当前任务示例
-                </button>
+                  options={[
+                    { value: "qa", label: "报销问答" },
+                    { value: "reimburse", label: "单次报销" },
+                    { value: "final_account", label: "年度决算" },
+                    { value: "budget", label: "预算生成" },
+                  ]}
+                />
+                <Button onClick={() => setInputText(getTaskDemoPrompt(selectedTask))} disabled={chatLoading || !bridgeReady}>
+                  填入示例
+                </Button>
               </div>
 
               <div className="chat-messages-container">
@@ -1098,64 +1018,58 @@ export default function App() {
               </div>
 
               <div className="chat-input-row">
-                <input
+                <Input
                   value={inputText}
                   onChange={(event) => setInputText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      void handleSend();
-                    }
-                  }}
+                  onPressEnter={() => void handleSend()}
                   placeholder={`输入${selectedTask === "qa" ? "问题" : "任务说明"}，当前任务：${selectedTask}`}
                   disabled={!bridgeReady || chatLoading}
                 />
-                <button onClick={() => void handleSend()} disabled={!bridgeReady || chatLoading}>
+                <Button onClick={() => void handleSend()} disabled={!bridgeReady || chatLoading} type="primary">
                   {chatLoading ? "发送中..." : "发送"}
-                </button>
+                </Button>
               </div>
-            </section>
+        </section>
 
-            <div className="preview-container" style={{ flex: `1 1 ${100 - chatPanePercent}%` }}>
-              <div
-                className="resize-handle resize-handle--left"
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="调整聊天与预览宽度"
-                tabIndex={0}
-                onPointerDown={(event) => {
-                  const container = contentRef.current;
-                  if (!container) return;
+        <div className="preview-container" style={{ flex: `1 1 ${100 - chatPanePercent}%` }}>
+          <div
+            className="resize-handle resize-handle--left"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整聊天与预览宽度"
+            tabIndex={0}
+            onPointerDown={(event) => {
+              const container = contentRef.current;
+              if (!container) return;
 
-                  const previewEl = (event.currentTarget as HTMLDivElement).parentElement;
-                  if (previewEl) {
-                    const rect = previewEl.getBoundingClientRect();
-                    if (event.clientX > rect.left + RESIZE_HIT_PX) return;
-                  }
+              const previewEl = (event.currentTarget as HTMLDivElement).parentElement;
+              if (previewEl) {
+                const rect = previewEl.getBoundingClientRect();
+                if (event.clientX > rect.left + RESIZE_HIT_PX) return;
+              }
 
-                  const rect = container.getBoundingClientRect();
-                  splitterDragRef.current = {
-                    kind: "chat",
-                    pointerId: event.pointerId,
-                    startX: event.clientX,
-                    startPercent: chatPanePercent,
-                    width: rect.width,
-                    sign: 1,
-                  };
-                  (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
-                  document.body.style.userSelect = "none";
-                  document.body.style.cursor = "col-resize";
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-                  event.preventDefault();
-                  const delta = event.key === "ArrowLeft" ? -2 : 2;
-                  setChatPanePercent((prev) => Math.max(20, Math.min(80, prev + delta)));
-                }}
-              />
-              <PreviewPanel preview={preview} />
-            </div>
-          </>
-        )}
+              const rect = container.getBoundingClientRect();
+              splitterDragRef.current = {
+                kind: "chat",
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startPercent: chatPanePercent,
+                width: rect.width,
+                sign: 1,
+              };
+              (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
+              document.body.style.userSelect = "none";
+              document.body.style.cursor = "col-resize";
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              const delta = event.key === "ArrowLeft" ? -2 : 2;
+              setChatPanePercent((prev) => Math.max(20, Math.min(80, prev + delta)));
+            }}
+          />
+          <PreviewPanel preview={preview} />
+        </div>
       </main>
     </div>
   );

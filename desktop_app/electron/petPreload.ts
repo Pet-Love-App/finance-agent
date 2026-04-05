@@ -24,4 +24,6 @@ const api = {
   },
 };
 
+export type PetApi = typeof api;
+
 contextBridge.exposeInMainWorld("petApi", api);

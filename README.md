@@ -162,6 +162,34 @@ AGENT_KB_MAX_CHARS=1800
 - 聊天时会先检索知识库片段，再交给 LLM 生成答案。
 - 文档更新后，重新执行一次 `ingest` 命令即可刷新知识库。
 
+## 图策略参数（Graph Policy）
+可在任务 `payload` 中通过 `graph_policy` 控制各 SubGraph 的 fallback 行为：
+
+```json
+{
+  "graph_policy": {
+    "reimburse_stop_on_rule_violation": true,
+    "qa_allow_empty_query": false,
+    "qa_kb_top_k": 4,
+    "qa_kb_score_threshold": 0.75,
+    "final_generate_when_empty": true,
+    "budget_skip_calculate_when_empty": true
+  }
+}
+```
+
+说明：
+- 未提供 `graph_policy` 时使用默认策略，兼容旧字段（如 `stop_on_rule_violation`、`kb_top_k`）。
+- 建议在桌面端调度层统一注入策略，避免前端页面重复硬编码。
+
+可通过环境变量调整默认策略（由调度器自动注入）：
+- `AGENT_GRAPH_REIMBURSE_STOP_ON_RULE_VIOLATION`（默认 `false`）
+- `AGENT_GRAPH_QA_ALLOW_EMPTY_QUERY`（默认 `false`）
+- `AGENT_GRAPH_QA_KB_TOP_K`（默认 `4`）
+- `AGENT_GRAPH_QA_KB_SCORE_THRESHOLD`（默认 `0.0`）
+- `AGENT_GRAPH_FINAL_GENERATE_WHEN_EMPTY`（默认 `true`）
+- `AGENT_GRAPH_BUDGET_SKIP_CALCULATE_WHEN_EMPTY`（默认 `true`）
+
 ## Agent 审计配置
 可通过环境变量做“策略参数化”，避免把规则阈值硬编码在代码里：
 
@@ -174,6 +202,25 @@ AGENT_HIGH_RISK_LABEL=High Risk
 
 # 特殊审计类目关键字，英文逗号分隔（默认 餐饮,会议）
 AGENT_SPECIAL_EXPENSE_KEYWORDS=餐饮,会议
+```
+
+## 代码沙箱（Code Sandbox）
+已新增 `agent/sandbox` 安全执行子系统，支持：
+- Docker 容器隔离执行（默认无网络、只读根文件系统、capabilities 降权）。
+- 静态安全扫描 + 代码哈希签名 + 运行时风险检测。
+- 审计日志（`data/audit/sandbox_audit.jsonl`）保留策略（180 天）。
+
+任务调度调用方式：
+- `payload.task_type = sandbox_exec`
+- `payload.task_payload` 示例字段：
+  - `user_id`, `language`, `code`
+  - `cpu_cores`, `memory_mb`, `disk_mb`, `network_kbps`, `timeout_seconds`
+  - `seccomp_profile`, `apparmor_profile`, `syscall_whitelist`
+
+CLI 示例：
+```bash
+python -m agent.sandbox.cli scan --code-file demo.py
+python -m agent.sandbox.cli exec --user-id u1 --language python --code-file demo.py
 ```
 
 ## 目录

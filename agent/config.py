@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import lru_cache
-from typing import Tuple
+from typing import Dict, Tuple
 
 
 def _safe_float(value: str, default: float) -> float:
@@ -28,6 +28,16 @@ class AuditConfig:
     llm_temperature: float
 
 
+@dataclass(frozen=True)
+class GraphPolicyConfig:
+    reimburse_stop_on_rule_violation: bool
+    qa_allow_empty_query: bool
+    qa_kb_top_k: int
+    qa_kb_score_threshold: float
+    final_generate_when_empty: bool
+    budget_skip_calculate_when_empty: bool
+
+
 @lru_cache(maxsize=1)
 def get_audit_config() -> AuditConfig:
     threshold = _safe_float(os.getenv("AGENT_CATEGORY_OVERRUN_THRESHOLD", "0.10"), 0.10)
@@ -49,3 +59,53 @@ def get_audit_config() -> AuditConfig:
         llm_model=llm_model,
         llm_temperature=llm_temp,
     )
+
+
+def _safe_bool(value: str, default: bool) -> bool:
+    text = (value or "").strip().lower()
+    if not text:
+        return default
+    return text in ("1", "true", "yes", "on")
+
+
+def _safe_int(value: str, default: int, minimum: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(parsed, minimum)
+
+
+@lru_cache(maxsize=1)
+def get_graph_policy_config() -> GraphPolicyConfig:
+    return GraphPolicyConfig(
+        reimburse_stop_on_rule_violation=_safe_bool(
+            os.getenv("AGENT_GRAPH_REIMBURSE_STOP_ON_RULE_VIOLATION", "false"),
+            False,
+        ),
+        qa_allow_empty_query=_safe_bool(
+            os.getenv("AGENT_GRAPH_QA_ALLOW_EMPTY_QUERY", "false"),
+            False,
+        ),
+        qa_kb_top_k=_safe_int(
+            os.getenv("AGENT_GRAPH_QA_KB_TOP_K", "4"),
+            4,
+            minimum=1,
+        ),
+        qa_kb_score_threshold=_safe_float(
+            os.getenv("AGENT_GRAPH_QA_KB_SCORE_THRESHOLD", "0.0"),
+            0.0,
+        ),
+        final_generate_when_empty=_safe_bool(
+            os.getenv("AGENT_GRAPH_FINAL_GENERATE_WHEN_EMPTY", "true"),
+            True,
+        ),
+        budget_skip_calculate_when_empty=_safe_bool(
+            os.getenv("AGENT_GRAPH_BUDGET_SKIP_CALCULATE_WHEN_EMPTY", "true"),
+            True,
+        ),
+    )
+
+
+def get_graph_policy_defaults() -> Dict[str, object]:
+    return asdict(get_graph_policy_config())

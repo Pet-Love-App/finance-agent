@@ -1,7 +1,10 @@
-import type { TemplatePreview } from "../types/preview";
+import type { FilePreview, TemplatePreview } from "../types/preview";
+import { MarkdownRenderer } from "./MarkdownRenderer";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 type Props = {
-  preview: TemplatePreview | null;
+  preview: FilePreview | null;
 };
 
 function renderExcel(preview: TemplatePreview) {
@@ -44,24 +47,9 @@ function renderDocx(preview: TemplatePreview) {
   );
 }
 
-export function PreviewPanel({ preview }: Props) {
-  if (!preview) {
-    return <div className="empty-state">请选择模板文件开始预览</div>;
-  }
-
+function renderTemplate(preview: TemplatePreview) {
   return (
-    <div className="preview-panel">
-      <div className="preview-header">
-        <div>
-          <h2>实时预览</h2>
-          <p className="file-path">{preview.filePath}</p>
-        </div>
-        <div className="meta">
-          <span>类型: {preview.fileType}</span>
-          <span>更新时间: {new Date(preview.updatedAt).toLocaleString()}</span>
-        </div>
-      </div>
-
+    <>
       {preview.warnings.length > 0 && (
         <div className="warning-box">
           {preview.warnings.map((warning, index) => (
@@ -71,6 +59,94 @@ export function PreviewPanel({ preview }: Props) {
       )}
 
       {preview.fileType === "docx" ? renderDocx(preview) : renderExcel(preview)}
+    </>
+  );
+}
+
+export function PreviewPanel({ preview }: Props) {
+  if (!preview) {
+    return <div className="empty-state">请选择文件开始预览</div>;
+  }
+
+  if (preview.kind === "template") {
+    const data = preview.data;
+    return <div className="preview-panel">{renderTemplate(data)}</div>;
+  }
+
+  const lowerType = preview.fileType.toLowerCase();
+  const showMarkdown = preview.kind === "text" && lowerType === "md";
+  const languageMap: Record<string, string> = {
+    ts: "typescript",
+    tsx: "tsx",
+    js: "javascript",
+    jsx: "jsx",
+    json: "json",
+    py: "python",
+    java: "java",
+    cs: "csharp",
+    cpp: "cpp",
+    c: "c",
+    go: "go",
+    rs: "rust",
+    php: "php",
+    rb: "ruby",
+    kt: "kotlin",
+    swift: "swift",
+    css: "css",
+    scss: "scss",
+    html: "html",
+    xml: "xml",
+    yaml: "yaml",
+    yml: "yaml",
+    sh: "bash",
+    bash: "bash",
+    ps1: "powershell",
+    sql: "sql",
+  };
+  const codeLanguage = preview.kind === "text" ? languageMap[lowerType] : undefined;
+
+  return (
+    <div className="preview-panel">
+      {preview.truncated && (
+        <div className="warning-box">
+          <p>文件过大，仅展示部分内容。</p>
+        </div>
+      )}
+
+      {preview.kind === "image" ? (
+        <div className="image-preview">
+          <img src={preview.dataUrl} alt={preview.filePath} />
+        </div>
+      ) : preview.kind === "text" ? (
+        showMarkdown ? (
+          <div className="markdown-content">
+            <MarkdownRenderer content={preview.content} />
+          </div>
+        ) : codeLanguage ? (
+          <div className="code-preview">
+            <SyntaxHighlighter
+              language={codeLanguage}
+              style={vscDarkPlus}
+              customStyle={{
+                margin: 0,
+                background: "transparent",
+                padding: "16px",
+                fontSize: "12px",
+                lineHeight: "1.6",
+              }}
+            >
+              {preview.content}
+            </SyntaxHighlighter>
+          </div>
+        ) : (
+          <pre className="text-preview">{preview.content}</pre>
+        )
+      ) : (
+        <div className="binary-preview">
+          <div className="binary-meta">大小: {preview.size} 字节</div>
+          <pre className="text-preview">{preview.hex}</pre>
+        </div>
+      )}
     </div>
   );
 }

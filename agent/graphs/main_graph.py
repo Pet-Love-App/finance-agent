@@ -11,6 +11,7 @@ from agent.graphs.subgraphs.budget import (
     budget_generate_node,
     budget_start_node,
     load_final_data_node,
+    route_after_load_final_data,
 )
 from agent.graphs.subgraphs.final_account import (
     aggregate_node,
@@ -18,8 +19,10 @@ from agent.graphs.subgraphs.final_account import (
     final_generate_node,
     final_start_node,
     load_records_node,
+    route_after_data_clean,
+    route_after_load_records,
 )
-from agent.graphs.subgraphs.qa import qa_start_node, question_understand_node, rule_retrieve_node
+from agent.graphs.subgraphs.qa import qa_fallback_node, qa_start_node, question_understand_node, route_after_understand, rule_retrieve_node
 from agent.graphs.subgraphs.reimburse import (
     activity_parse_node,
     classify_file_node,
@@ -28,10 +31,14 @@ from agent.graphs.subgraphs.reimburse import (
     gen_mail_node,
     invoice_extract_node,
     reimburse_start_node,
+    route_after_extract,
+    route_after_rule_check,
+    route_after_scan,
     rule_check_node,
     save_record_node,
     scan_file_node,
 )
+from agent.graphs.subgraphs.sandbox import sandbox_execute_node, sandbox_start_node
 
 
 def build_main_graph() -> Any:
@@ -53,6 +60,7 @@ def build_main_graph() -> Any:
     graph.add_node("QAStartNode", qa_start_node)
     graph.add_node("QuestionUnderstandNode", question_understand_node)
     graph.add_node("RuleRetrieveNode", rule_retrieve_node)
+    graph.add_node("QAFallbackNode", qa_fallback_node)
 
     graph.add_node("FinalStartNode", final_start_node)
     graph.add_node("LoadRecordNode", load_records_node)
@@ -64,6 +72,8 @@ def build_main_graph() -> Any:
     graph.add_node("LoadFinalDataNode", load_final_data_node)
     graph.add_node("BudgetCalculateNode", budget_calculate_node)
     graph.add_node("BudgetGenerateNode", budget_generate_node)
+    graph.add_node("SandboxStartNode", sandbox_start_node)
+    graph.add_node("SandboxExecuteNode", sandbox_execute_node)
 
     graph.add_edge(START, "IntentNode")
     graph.add_conditional_edges(
@@ -74,33 +84,87 @@ def build_main_graph() -> Any:
             "QAStartNode": "QAStartNode",
             "FinalStartNode": "FinalStartNode",
             "BudgetStartNode": "BudgetStartNode",
+            "SandboxStartNode": "SandboxStartNode",
         },
     )
 
     graph.add_edge("ReimburseStartNode", "ScanFileNode")
-    graph.add_edge("ScanFileNode", "ClassifyFileNode")
+    graph.add_conditional_edges(
+        "ScanFileNode",
+        route_after_scan,
+        {
+            "ClassifyFileNode": "ClassifyFileNode",
+            "SaveRecordNode": "SaveRecordNode",
+        },
+    )
     graph.add_edge("ClassifyFileNode", "ExtractNode")
-    graph.add_edge("ExtractNode", "InvoiceExtractNode")
+    graph.add_conditional_edges(
+        "ExtractNode",
+        route_after_extract,
+        {
+            "InvoiceExtractNode": "InvoiceExtractNode",
+            "ActivityParseNode": "ActivityParseNode",
+        },
+    )
     graph.add_edge("InvoiceExtractNode", "ActivityParseNode")
     graph.add_edge("ActivityParseNode", "RuleCheckNode")
-    graph.add_edge("RuleCheckNode", "GenDocNode")
+    graph.add_conditional_edges(
+        "RuleCheckNode",
+        route_after_rule_check,
+        {
+            "GenDocNode": "GenDocNode",
+            "SaveRecordNode": "SaveRecordNode",
+        },
+    )
     graph.add_edge("GenDocNode", "GenMailNode")
     graph.add_edge("GenMailNode", "SaveRecordNode")
     graph.add_edge("SaveRecordNode", END)
 
     graph.add_edge("QAStartNode", "QuestionUnderstandNode")
-    graph.add_edge("QuestionUnderstandNode", "RuleRetrieveNode")
+    graph.add_conditional_edges(
+        "QuestionUnderstandNode",
+        route_after_understand,
+        {
+            "RuleRetrieveNode": "RuleRetrieveNode",
+            "QAFallbackNode": "QAFallbackNode",
+        },
+    )
     graph.add_edge("RuleRetrieveNode", END)
+    graph.add_edge("QAFallbackNode", END)
 
     graph.add_edge("FinalStartNode", "LoadRecordNode")
-    graph.add_edge("LoadRecordNode", "DataCleanNode")
-    graph.add_edge("DataCleanNode", "DataAggregateNode")
+    graph.add_conditional_edges(
+        "LoadRecordNode",
+        route_after_load_records,
+        {
+            "DataCleanNode": "DataCleanNode",
+            "FinalGenerateNode": "FinalGenerateNode",
+        },
+    )
+    graph.add_conditional_edges(
+        "DataCleanNode",
+        route_after_data_clean,
+        {
+            "DataAggregateNode": "DataAggregateNode",
+            "FinalGenerateNode": "FinalGenerateNode",
+        },
+    )
     graph.add_edge("DataAggregateNode", "FinalGenerateNode")
     graph.add_edge("FinalGenerateNode", END)
 
     graph.add_edge("BudgetStartNode", "LoadFinalDataNode")
-    graph.add_edge("LoadFinalDataNode", "BudgetCalculateNode")
+    graph.add_conditional_edges(
+        "LoadFinalDataNode",
+        route_after_load_final_data,
+        {
+            "BudgetCalculateNode": "BudgetCalculateNode",
+            "BudgetGenerateNode": "BudgetGenerateNode",
+        },
+    )
     graph.add_edge("BudgetCalculateNode", "BudgetGenerateNode")
     graph.add_edge("BudgetGenerateNode", END)
+
+    graph.add_edge("SandboxStartNode", "SandboxExecuteNode")
+    graph.add_edge("SandboxExecuteNode", END)
 
     return graph.compile()

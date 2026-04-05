@@ -101,6 +101,11 @@ from agent.tools.stats_tools import (
     load_final_data,
 )
 from agent.tools.storage_tools import load_records, save_record
+from agent.graphs.subgraphs.budget import route_after_load_final_data
+from agent.graphs.subgraphs.final_account import route_after_data_clean, route_after_load_records
+from agent.graphs.subgraphs.qa import route_after_understand
+from agent.graphs.subgraphs.reimburse import route_after_extract, route_after_rule_check, route_after_scan
+from agent import EventBus, TaskDispatcher
 
 
 class TestToolExports(unittest.TestCase):
@@ -202,6 +207,19 @@ class TestRuleQATools(unittest.TestCase):
             retrieve_res = rule_retrieve("报销", str(rules_path))
             self.assertTrue(retrieve_res.success)
             self.assertEqual(len(retrieve_res.data["items"]), 1)
+            self.assertGreater(retrieve_res.data["items"][0]["score"], 0)
+
+    def test_rule_retrieve_text_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            rules_path = Path(tmp) / "rules.txt"
+            rules_path.write_text(
+                "餐饮发票需提供菜单。\n\n差旅报销需提供行程单。",
+                encoding="utf-8",
+            )
+            retrieve_res = rule_retrieve("差旅报销", str(rules_path), top_k=2)
+            self.assertTrue(retrieve_res.success)
+            self.assertGreaterEqual(len(retrieve_res.data["items"]), 1)
+            self.assertIn("差旅", retrieve_res.data["items"][0]["content"])
 
     def test_rag_and_qa(self) -> None:
         class _MockItem:
@@ -218,6 +236,23 @@ class TestRuleQATools(unittest.TestCase):
             self.assertTrue(rag_res.success)
             self.assertEqual(len(rag_res.data["items"]), 1)
             self.assertEqual(rag_res.data["context"], "context")
+            self.assertEqual(rag_res.data["retrieval"], "vector")
+
+    def test_rag_retrieve_fallback_and_threshold(self) -> None:
+        class _MockItem:
+            def __init__(self, score: float) -> None:
+                self.source = "kb"
+                self.title = "条款A"
+                self.content = "内容"
+                self.score = score
+
+        with patch("agent.kb.retriever.search_policy", side_effect=RuntimeError("boom")), patch(
+            "agent.kb.retriever.retrieve_chunks", return_value=[_MockItem(0.4), _MockItem(0.9)]
+        ):
+            rag_res = rag_retrieve("报销", top_k=2, score_threshold=0.8)
+            self.assertTrue(rag_res.success)
+            self.assertEqual(rag_res.data["retrieval"], "keyword_fallback")
+            self.assertEqual(len(rag_res.data["items"]), 1)
 
         intent_res = question_understand("报销需要哪些附件")
         self.assertTrue(intent_res.success)
@@ -298,6 +333,91 @@ class TestDocStorageStatsTools(unittest.TestCase):
             report_res = generate_report(aggregate, budget_res.data["budget"], output_dir=tmp)
             self.assertTrue(report_res.success)
             self.assertTrue(Path(report_res.data["report_path"]).exists())
+
+
+class TestReimburseRouting(unittest.TestCase):
+    def test_route_after_scan(self) -> None:
+        self.assertEqual(route_after_scan({"files": ["a.pdf"]}), "ClassifyFileNode")
+        self.assertEqual(route_after_scan({"files": []}), "SaveRecordNode")
+
+    def test_route_after_extract(self) -> None:
+        self.assertEqual(route_after_extract({"merged_text": "文本"}), "InvoiceExtractNode")
+        self.assertEqual(route_after_extract({"merged_text": "   "}), "ActivityParseNode")
+
+    def test_route_after_rule_check(self) -> None:
+        state = {
+            "payload": {"stop_on_rule_violation": True},
+            "rule_result": {"compliance": False},
+        }
+        self.assertEqual(route_after_rule_check(state), "SaveRecordNode")
+        state_ok = {
+            "payload": {"stop_on_rule_violation": False},
+            "rule_result": {"compliance": False},
+        }
+        self.assertEqual(route_after_rule_check(state_ok), "GenDocNode")
+        policy_state = {
+            "payload": {"graph_policy": {"reimburse_stop_on_rule_violation": True}},
+            "rule_result": {"compliance": False},
+        }
+        self.assertEqual(route_after_rule_check(policy_state), "SaveRecordNode")
+
+
+class TestOtherSubgraphRouting(unittest.TestCase):
+    def test_route_after_understand(self) -> None:
+        self.assertEqual(route_after_understand({"payload": {"normalized_query": "报销附件"}}), "RuleRetrieveNode")
+        self.assertEqual(route_after_understand({"payload": {"normalized_query": "  "}}), "QAFallbackNode")
+        self.assertEqual(
+            route_after_understand({"payload": {"normalized_query": "  ", "graph_policy": {"qa_allow_empty_query": True}}}),
+            "RuleRetrieveNode",
+        )
+
+    def test_route_after_load_records(self) -> None:
+        self.assertEqual(route_after_load_records({"records": [{"id": 1}]}), "DataCleanNode")
+        self.assertEqual(route_after_load_records({"records": []}), "FinalGenerateNode")
+        self.assertEqual(
+            route_after_load_records({"records": [], "payload": {"graph_policy": {"final_generate_when_empty": False}}}),
+            "DataCleanNode",
+        )
+
+    def test_route_after_data_clean(self) -> None:
+        self.assertEqual(route_after_data_clean({"records": [{"id": 1}]}), "DataAggregateNode")
+        self.assertEqual(route_after_data_clean({"records": []}), "FinalGenerateNode")
+        self.assertEqual(
+            route_after_data_clean({"records": [], "payload": {"graph_policy": {"final_generate_when_empty": False}}}),
+            "DataAggregateNode",
+        )
+
+    def test_route_after_load_final_data(self) -> None:
+        self.assertEqual(route_after_load_final_data({"aggregate": {"total_amount": 100.0}}), "BudgetCalculateNode")
+        self.assertEqual(route_after_load_final_data({"aggregate": {}}), "BudgetGenerateNode")
+        self.assertEqual(
+            route_after_load_final_data({"aggregate": {}, "payload": {"graph_policy": {"budget_skip_calculate_when_empty": False}}}),
+            "BudgetCalculateNode",
+        )
+
+
+class TestDispatcherGraphPolicy(unittest.TestCase):
+    def test_dispatcher_injects_default_graph_policy(self) -> None:
+        class _Graph:
+            def invoke(self, state):
+                policy = state.get("payload", {}).get("graph_policy", {})
+                return {"task_progress": [], "result": {"type": "qa", "policy_keys": sorted(policy.keys())}, "errors": []}
+
+        dispatcher = TaskDispatcher(EventBus(), graph=_Graph())
+        result = dispatcher.dispatch("qa", {"query": "报销规则"})
+        keys = result.get("policy_keys", [])
+        self.assertIn("qa_kb_top_k", keys)
+        self.assertIn("reimburse_stop_on_rule_violation", keys)
+
+    def test_dispatcher_graph_policy_user_override(self) -> None:
+        class _Graph:
+            def invoke(self, state):
+                policy = state.get("payload", {}).get("graph_policy", {})
+                return {"task_progress": [], "result": {"type": "qa", "top_k": policy.get("qa_kb_top_k")}, "errors": []}
+
+        dispatcher = TaskDispatcher(EventBus(), graph=_Graph())
+        result = dispatcher.dispatch("qa", {"query": "报销规则", "graph_policy": {"qa_kb_top_k": 9}})
+        self.assertEqual(result.get("top_k"), 9)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,20 @@
+stages:
+  - sandbox-security
+
+sandbox_scan:
+  stage: sandbox-security
+  image: python:3.11
+  script:
+    - pip install -r requirements.txt
+    - python -m agent.sandbox.cli scan --code-file agent/sandbox/orchestrator.py
+  tags:
+    - sandbox-runner
+
+sandbox_unit_tests:
+  stage: sandbox-security
+  image: python:3.11
+  script:
+    - pip install -r requirements.txt
+    - python -m unittest tests.test_sandbox tests.test_v2_dispatcher
+  tags:
+    - sandbox-runner

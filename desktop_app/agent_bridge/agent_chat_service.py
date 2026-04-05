@@ -513,7 +513,7 @@ def _help_text() -> str:
         "1) 输入“运行sample审计”触发内置示例审计；\n"
         "2) 输入“如何修复高风险问题”等规则咨询；\n"
         "3) 传入 payload.budget_source / payload.actual_source 做真实数据审计；\n"
-        "4) 传入 payload.task_type（qa/reimburse/final_account/budget）触发新图任务。"
+        "4) 传入 payload.task_type（qa/reimburse/final_account/budget/sandbox_exec）触发新图任务。"
         "\n5) 传入 payload.workspace_mode=true + payload.workspace_dir 使用目录编辑工具模式。"
     )
 
