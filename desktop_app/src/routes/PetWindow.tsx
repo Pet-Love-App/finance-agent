@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { Button } from "antd";
+import lottie, { type AnimationItem } from "lottie-web";
+
+import petAnimationData from "../../assets/lottie/loader-cat.json";
 
 type MoveState = {
   isMoving: boolean;
@@ -55,6 +58,8 @@ function extractDropPath(event: DragEvent<HTMLDivElement>): string {
 
 export function PetWindow() {
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const lottieRef = useRef<HTMLDivElement>(null);
+  const lottieInstanceRef = useRef<AnimationItem | null>(null);
   const moveStateRef = useRef<MoveState>({
     isMoving: false,
     movedDistance: 0,
@@ -64,8 +69,30 @@ export function PetWindow() {
 
   useEffect(() => {
     document.body.classList.add("pet-route-body");
+    const previousTitle = document.title;
+    document.title = "桌宠";
     return () => {
       document.body.classList.remove("pet-route-body");
+      document.title = previousTitle;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!lottieRef.current) return;
+    lottieInstanceRef.current = lottie.loadAnimation({
+      container: lottieRef.current,
+      renderer: "svg",
+      loop: true,
+      autoplay: true,
+      animationData: petAnimationData,
+      rendererSettings: {
+        preserveAspectRatio: "xMidYMid meet",
+      },
+    });
+
+    return () => {
+      lottieInstanceRef.current?.destroy();
+      lottieInstanceRef.current = null;
     };
   }, []);
 
@@ -179,7 +206,8 @@ export function PetWindow() {
         role="button"
         aria-label="打开桌宠聊天"
       >
-        <div className="pet-window-emoji">🐱</div>
+        <div className="pet-window-aura" />
+        <div className="pet-window-lottie" ref={lottieRef} />
       </Button>
     </div>
   );

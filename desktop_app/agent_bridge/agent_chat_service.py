@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import errno
+import datetime
+import hashlib
 import json
 import os
 import re
@@ -9,9 +11,10 @@ import sys
 import textwrap
 import urllib.error
 import urllib.request
+import zipfile
 from urllib.parse import urlparse
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 CURRENT_FILE = Path(__file__).resolve()
 
@@ -40,10 +43,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 SYSTEM_PROMPT = (
-    "你是企业报销审计助手。"
-    "请优先使用简洁、准确、可执行的中文回答；"
-    "若用户询问报销审计规则，请结合常见合规点给出建议；"
-    "若问题超出报销场景，也可进行通用问答。"
+    "你是企业报销与办公任务助手。"
+    "请使用自然、友好、专业的中文回答，先理解用户真实目标，再给出结论。"
+    "默认采用“结论 + 关键步骤 + 注意事项”的结构，尽量短句表达，避免堆砌术语。"
+    "当信息不足时，先给一个可执行的初步方案，再明确指出需要用户补充的关键信息。"
+    "若用户询问报销审计规则，请结合常见合规点和风险等级给出建议；"
+    "若问题超出报销场景，也可进行通用问答并保持同样风格。"
 )
 
 DEFAULT_KB_PATH = PROJECT_ROOT / "data" / "kb" / "reimbursement_kb.json"
@@ -59,6 +64,315 @@ WORKSPACE_SKIP_DIRS = {
     ".venv",
     "venv",
 }
+
+TEXT_EDIT_BLOCKED_SUFFIXES = {
+    ".xlsx",
+    ".xls",
+    ".xlsm",
+    ".xlsb",
+    ".docx",
+    ".doc",
+    ".pptx",
+    ".ppt",
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".zip",
+    ".rar",
+    ".7z",
+}
+
+XLSX_EDIT_SUFFIXES = {".xlsx", ".xlsm"}
+
+DEFAULT_REIMBURSE_CATEGORY_KEYWORDS: Dict[str, Set[str]] = {
+    "报销单": {"报销单", "报销申请", "报销", "reimburse"},
+    "发票": {"发票", "invoice", "票据", "电子票"},
+    "支付凭证": {"支付", "付款", "转账", "流水", "回单", "payment"},
+    "费用明细": {"明细", "清单", "detail"},
+    "活动说明": {"活动说明", "情况说明", "说明", "通知", "邮件", "mail"},
+    "预算材料": {"预算", "budget"},
+    "决算材料": {"决算", "final", "结项"},
+    "签到材料": {"签到", "签名", "出席"},
+}
+
+DEFAULT_REQUIRED_CATEGORIES = ["报销单", "发票", "支付凭证", "费用明细"]
+
+DEFAULT_MISSING_SUGGESTIONS: Dict[str, str] = {
+    "报销单": "示例：报销单.xlsx / 报销申请表.docx",
+    "发票": "示例：发票1.pdf / 电子发票.png",
+    "支付凭证": "示例：支付回单.pdf / 转账截图.jpg",
+    "费用明细": "示例：费用明细.xlsx / 报销清单.csv",
+}
+
+
+DEFAULT_MEMORY_PATH = PROJECT_ROOT / "data" / "memory" / "agent_memory.json"
+DEFAULT_MEMORY_SHORT_TERM_LIMIT = 14
+DEFAULT_MEMORY_RECENT_CONTEXT = 6
+DEFAULT_MEMORY_LONG_TERM_LIMIT = 24
+DEFAULT_MEMORY_SUMMARY_MAX_CHARS = 2400
+
+
+def _memory_enabled(payload: Dict[str, Any]) -> bool:
+    raw = payload.get("memory_enabled", True)
+    if isinstance(raw, bool):
+        return raw
+    text = str(raw).strip().lower()
+    return text not in {"0", "false", "off", "no"}
+
+
+def _memory_path() -> Path:
+    raw = os.getenv("AGENT_MEMORY_PATH", "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return DEFAULT_MEMORY_PATH
+
+
+def _memory_session_key(payload: Dict[str, Any]) -> str:
+    scope = str(payload.get("memory_scope", "workspace")).strip().lower() or "workspace"
+    workspace = str(payload.get("workspace_dir", "")).strip()
+    base = workspace if workspace else "default"
+    digest = hashlib.sha1(base.encode("utf-8")).hexdigest()[:16]
+    return f"{scope}:{digest}"
+
+
+def _load_memory_store() -> Dict[str, Any]:
+    path = _memory_path()
+    if not path.exists():
+        return {"version": 1, "sessions": {}}
+    try:
+        raw = path.read_text(encoding="utf-8")
+        parsed = json.loads(raw)
+    except Exception:
+        return {"version": 1, "sessions": {}}
+    if not isinstance(parsed, dict):
+        return {"version": 1, "sessions": {}}
+    sessions = parsed.get("sessions")
+    if not isinstance(sessions, dict):
+        parsed["sessions"] = {}
+    parsed.setdefault("version", 1)
+    return parsed
+
+
+def _save_memory_store(store: Dict[str, Any]) -> None:
+    path = _memory_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path.replace(path)
+
+
+def _get_or_create_memory_session(store: Dict[str, Any], session_key: str) -> Dict[str, Any]:
+    sessions = store.setdefault("sessions", {})
+    if not isinstance(sessions, dict):
+        sessions = {}
+        store["sessions"] = sessions
+    existing = sessions.get(session_key)
+    if isinstance(existing, dict):
+        existing.setdefault("short_term", [])
+        existing.setdefault("long_term", [])
+        existing.setdefault("rolling_summary", "")
+        existing.setdefault("profile", {})
+        return existing
+    now = datetime.datetime.now().isoformat()
+    session = {
+        "updated_at": now,
+        "short_term": [],
+        "long_term": [],
+        "rolling_summary": "",
+        "profile": {},
+    }
+    sessions[session_key] = session
+    return session
+
+
+def _reset_memory_session(payload: Dict[str, Any]) -> None:
+    if not _memory_enabled(payload):
+        return
+    store = _load_memory_store()
+    session_key = _memory_session_key(payload)
+    sessions = store.setdefault("sessions", {})
+    if isinstance(sessions, dict):
+        sessions.pop(session_key, None)
+    _save_memory_store(store)
+
+
+def _summarize_messages(messages: List[Dict[str, str]], *, max_chars: int = 900) -> str:
+    lines: List[str] = []
+    for item in messages:
+        role = "用户" if item.get("role") == "user" else "助手"
+        content = str(item.get("content", "")).strip().replace("\n", " ")
+        if not content:
+            continue
+        lines.append(f"- {role}: {content[:140]}")
+    text = "\n".join(lines)
+    return text[:max_chars]
+
+
+def _extract_memory_facts(message: str) -> List[Dict[str, str]]:
+    text = str(message or "").strip()
+    if not text:
+        return []
+    facts: List[Dict[str, str]] = []
+    patterns: List[Tuple[str, str]] = [
+        (r"(?:请|帮我)?记住[:：]?\s*(.+)", "explicit"),
+        (r"我叫([^\s，。,；;]+)", "profile"),
+        (r"请用([^。！!\n]+)", "preference"),
+        (r"(?:以后|之后).{0,20}(?:不要|别)([^。！!\n]+)", "constraint"),
+        (r"我的(?:偏好|习惯|风格)是([^。！!\n]+)", "preference"),
+    ]
+    for pattern, kind in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        value = str(match.group(1)).strip("：:，,。；; ")
+        if not value:
+            continue
+        facts.append({"type": kind, "fact": value[:240]})
+    if ("不要" in text or "必须" in text or "务必" in text) and len(text) <= 180:
+        facts.append({"type": "constraint", "fact": text})
+    unique: List[Dict[str, str]] = []
+    seen: Set[str] = set()
+    for item in facts:
+        fact = str(item.get("fact", "")).strip()
+        if not fact or fact in seen:
+            continue
+        seen.add(fact)
+        unique.append(item)
+    return unique
+
+
+def _merge_memory_profile(session: Dict[str, Any], memory_profile: Any) -> None:
+    if not isinstance(memory_profile, dict):
+        return
+    profile = session.setdefault("profile", {})
+    if not isinstance(profile, dict):
+        profile = {}
+        session["profile"] = profile
+    for key, value in memory_profile.items():
+        normalized_key = str(key).strip()
+        if not normalized_key:
+            continue
+        profile[normalized_key] = str(value).strip()[:200]
+
+
+def _remember_turn(payload: Dict[str, Any], user_message: str, assistant_reply: str) -> None:
+    if not _memory_enabled(payload):
+        return
+    store = _load_memory_store()
+    session_key = _memory_session_key(payload)
+    session = _get_or_create_memory_session(store, session_key)
+
+    _merge_memory_profile(session, payload.get("memory_profile"))
+
+    short_term = session.setdefault("short_term", [])
+    if not isinstance(short_term, list):
+        short_term = []
+        session["short_term"] = short_term
+
+    short_limit = _safe_int_env("AGENT_MEMORY_SHORT_TERM_LIMIT", DEFAULT_MEMORY_SHORT_TERM_LIMIT, min_value=6)
+    summary_max_chars = _safe_int_env("AGENT_MEMORY_SUMMARY_MAX_CHARS", DEFAULT_MEMORY_SUMMARY_MAX_CHARS, min_value=800)
+
+    user_text = str(user_message or "").strip()
+    reply_text = str(assistant_reply or "").strip()
+    if user_text:
+        short_term.append({"role": "user", "content": user_text[:2000]})
+    if reply_text:
+        short_term.append({"role": "assistant", "content": reply_text[:2200]})
+
+    rolling_summary = str(session.get("rolling_summary", "") or "")
+    if len(short_term) > short_limit:
+        keep_count = max(short_limit // 2, 4)
+        overflow_count = len(short_term) - keep_count
+        overflow = short_term[:overflow_count]
+        short_term = short_term[overflow_count:]
+        session["short_term"] = short_term
+        overflow_summary = _summarize_messages(overflow, max_chars=1000)
+        if overflow_summary:
+            rolling_summary = (rolling_summary + "\n" + overflow_summary).strip() if rolling_summary else overflow_summary
+            session["rolling_summary"] = rolling_summary[:summary_max_chars]
+
+    long_term = session.setdefault("long_term", [])
+    if not isinstance(long_term, list):
+        long_term = []
+        session["long_term"] = long_term
+
+    extracted = _extract_memory_facts(user_text)
+    if extracted:
+        now = datetime.datetime.now().isoformat()
+        existing_facts = {str(item.get("fact", "")) for item in long_term if isinstance(item, dict)}
+        for item in extracted:
+            fact = str(item.get("fact", "")).strip()
+            if not fact or fact in existing_facts:
+                continue
+            long_term.append(
+                {
+                    "type": str(item.get("type", "fact")),
+                    "fact": fact,
+                    "source": "user_message",
+                    "updated_at": now,
+                }
+            )
+            existing_facts.add(fact)
+    long_limit = _safe_int_env("AGENT_MEMORY_LONG_TERM_LIMIT", DEFAULT_MEMORY_LONG_TERM_LIMIT, min_value=6)
+    if len(long_term) > long_limit:
+        session["long_term"] = long_term[-long_limit:]
+
+    session["updated_at"] = datetime.datetime.now().isoformat()
+    _save_memory_store(store)
+
+
+def _memory_context(payload: Dict[str, Any]) -> str:
+    if not _memory_enabled(payload):
+        return ""
+    store = _load_memory_store()
+    session = _get_or_create_memory_session(store, _memory_session_key(payload))
+
+    chunks: List[str] = []
+    rolling_summary = str(session.get("rolling_summary", "") or "").strip()
+    if rolling_summary:
+        chunks.append(f"历史摘要:\n{rolling_summary}")
+
+    recent_limit = _safe_int_env("AGENT_MEMORY_RECENT_CONTEXT", DEFAULT_MEMORY_RECENT_CONTEXT, min_value=2)
+    short_term = session.get("short_term", [])
+    if isinstance(short_term, list) and short_term:
+        rows: List[str] = []
+        for item in short_term[-recent_limit:]:
+            if not isinstance(item, dict):
+                continue
+            role = "用户" if item.get("role") == "user" else "助手"
+            content = str(item.get("content", "")).strip()
+            if content:
+                rows.append(f"- {role}: {content[:180]}")
+        if rows:
+            chunks.append("最近对话记忆:\n" + "\n".join(rows))
+
+    long_term = session.get("long_term", [])
+    if isinstance(long_term, list) and long_term:
+        facts: List[str] = []
+        for item in long_term[-8:]:
+            if not isinstance(item, dict):
+                continue
+            fact = str(item.get("fact", "")).strip()
+            if fact:
+                facts.append(f"- {fact[:180]}")
+        if facts:
+            chunks.append("长期记忆:\n" + "\n".join(facts))
+
+    profile = session.get("profile", {})
+    if isinstance(profile, dict) and profile:
+        pairs = [f"{str(key).strip()}={str(value).strip()}" for key, value in profile.items() if str(key).strip()]
+        if pairs:
+            chunks.append("用户画像:\n" + "\n".join(f"- {item[:180]}" for item in pairs[:12]))
+    return "\n\n".join(chunks).strip()
+
+
+def _merge_context_blocks(*blocks: str) -> str:
+    cleaned = [str(item).strip() for item in blocks if str(item).strip()]
+    return "\n\n".join(cleaned)
 
 
 def _safe_workspace_root(payload: Dict[str, Any]) -> Optional[Path]:
@@ -104,33 +418,313 @@ def _workspace_tree_text(root: Path, *, max_files: int = 120) -> str:
     return "\n".join(rows) if rows else "(空目录)"
 
 
+def _workspace_all_files(root: Path, *, max_files: int = 5000) -> List[Path]:
+    files: List[Path] = []
+    for current, dirs, names in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in WORKSPACE_SKIP_DIRS and not d.startswith(".")]
+        for name in sorted(names):
+            if name.startswith("."):
+                continue
+            path = (Path(current) / name).resolve()
+            try:
+                path.relative_to(root)
+            except ValueError:
+                continue
+            files.append(path)
+            if len(files) >= max_files:
+                return files
+    return files
+
+
+def _match_keywords(text: str, keywords: Set[str]) -> bool:
+    lowered = text.lower()
+    return any(key.lower() in lowered for key in keywords)
+
+
+def _parse_reimburse_package_options(raw_options: Any) -> Tuple[Dict[str, Set[str]], List[str], Dict[str, str], bool]:
+    category_keywords: Dict[str, Set[str]] = {
+        key: set(values) for key, values in DEFAULT_REIMBURSE_CATEGORY_KEYWORDS.items()
+    }
+    required_categories = list(DEFAULT_REQUIRED_CATEGORIES)
+    suggestions = dict(DEFAULT_MISSING_SUGGESTIONS)
+    include_uncategorized = True
+
+    if not isinstance(raw_options, dict):
+        return category_keywords, required_categories, suggestions, include_uncategorized
+
+    custom_keywords = raw_options.get("category_keywords")
+    if isinstance(custom_keywords, dict):
+        for category, values in custom_keywords.items():
+            key = str(category).strip()
+            if not key:
+                continue
+            if isinstance(values, list):
+                words = {str(item).strip() for item in values if str(item).strip()}
+                if words:
+                    category_keywords[key] = words
+
+    custom_required = raw_options.get("required_categories")
+    if isinstance(custom_required, list):
+        normalized_required = [str(item).strip() for item in custom_required if str(item).strip()]
+        if normalized_required:
+            required_categories = normalized_required
+            for category in required_categories:
+                category_keywords.setdefault(category, {category})
+
+    custom_suggestions = raw_options.get("missing_suggestions")
+    if isinstance(custom_suggestions, dict):
+        for category, tip in custom_suggestions.items():
+            key = str(category).strip()
+            if not key:
+                continue
+            tip_text = str(tip).strip()
+            if tip_text:
+                suggestions[key] = tip_text
+
+    include_uncategorized = bool(raw_options.get("include_uncategorized", True))
+    return category_keywords, required_categories, suggestions, include_uncategorized
+
+
+def _workspace_prepare_reimbursement_package(
+    root: Path,
+    package_name: Optional[str] = None,
+    options: Optional[Dict[str, Any]] = None,
+) -> str:
+    all_files = _workspace_all_files(root)
+    if not all_files:
+        raise ValueError("目录为空，未找到可打包的材料。")
+
+    category_keywords, required_categories, suggestion_map, include_uncategorized = _parse_reimburse_package_options(
+        options or {}
+    )
+
+    category_files: Dict[str, List[Path]] = {key: [] for key in category_keywords.keys()}
+    uncategorized: List[Path] = []
+
+    for file_path in all_files:
+        filename = file_path.name
+        rel = str(file_path.relative_to(root)).replace("\\", "/")
+
+        # 跳过历史打包结果，避免把 zip 包再次打进新 zip。
+        if file_path.suffix.lower() == ".zip":
+            continue
+
+        matched = False
+        for category, keywords in category_keywords.items():
+            if _match_keywords(filename, keywords) or _match_keywords(rel, keywords):
+                category_files[category].append(file_path)
+                matched = True
+        if not matched:
+            uncategorized.append(file_path)
+
+    missing = [name for name in required_categories if not category_files.get(name)]
+    if missing:
+        details = "\n".join(f"- 缺少：{name}（{suggestion_map.get(name, '请补充对应材料')}）" for name in missing)
+        raise ValueError(f"检测到材料不完整，请先补齐后再打包：\n{details}")
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    raw_name = str(package_name or f"reimbursement_package_{timestamp}.zip").strip()
+    if not raw_name.lower().endswith(".zip"):
+        raw_name += ".zip"
+
+    output_zip = (root / raw_name).resolve()
+    try:
+        output_zip.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("压缩包名称非法，请仅提供文件名，不要包含目录穿越路径。") from exc
+
+    with zipfile.ZipFile(output_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for category, files in category_files.items():
+            for file_path in files:
+                arcname = f"{category}/{file_path.name}"
+                zf.write(file_path, arcname=arcname)
+        if include_uncategorized:
+            for file_path in uncategorized:
+                arcname = f"其他材料/{file_path.name}"
+                zf.write(file_path, arcname=arcname)
+
+    total_count = sum(len(files) for files in category_files.values()) + (len(uncategorized) if include_uncategorized else 0)
+    summary_items = [f"{name} {len(category_files.get(name, []))} 份" for name in required_categories]
+    return (
+        f"已生成压缩包：{output_zip.name}（共 {total_count} 个文件）\n"
+        f"分类统计：{', '.join(summary_items)}"
+    )
+
+
 def _workspace_read(root: Path, relative_path: str) -> str:
     target = _safe_workspace_target(root, relative_path)
     if not target.exists() or not target.is_file():
         raise FileNotFoundError(f"文件不存在: {relative_path}")
+    if target.suffix.lower() in TEXT_EDIT_BLOCKED_SUFFIXES:
+        raise ValueError(f"该文件类型不支持文本读取: {target.name}")
     return target.read_text(encoding="utf-8")
 
 
 def _workspace_write(root: Path, relative_path: str, content: str) -> None:
     target = _safe_workspace_target(root, relative_path)
+    if target.suffix.lower() in TEXT_EDIT_BLOCKED_SUFFIXES:
+        raise ValueError(f"该文件类型不支持文本写入: {target.name}")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
 
 
 def _workspace_append(root: Path, relative_path: str, content: str) -> None:
     target = _safe_workspace_target(root, relative_path)
+    if target.suffix.lower() in TEXT_EDIT_BLOCKED_SUFFIXES:
+        raise ValueError(f"该文件类型不支持文本追加: {target.name}")
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8") as f:
         f.write(content)
 
 
 def _workspace_replace(root: Path, relative_path: str, old: str, new: str) -> int:
+    target = _safe_workspace_target(root, relative_path)
+    if target.suffix.lower() in TEXT_EDIT_BLOCKED_SUFFIXES:
+        raise ValueError(f"该文件类型不支持文本替换: {target.name}")
     source = _workspace_read(root, relative_path)
     if old not in source:
         return 0
     updated = source.replace(old, new)
     _workspace_write(root, relative_path, updated)
     return source.count(old)
+
+
+def _workspace_xlsx_edit(
+    root: Path,
+    relative_path: str,
+    *,
+    sheet: Optional[str],
+    set_cells: Any,
+    append_rows: Any,
+    append_dict_rows: Any,
+) -> str:
+    target = _safe_workspace_target(root, relative_path)
+    if target.suffix.lower() not in XLSX_EDIT_SUFFIXES:
+        raise ValueError("xlsx_edit 仅支持 .xlsx 或 .xlsm 文件")
+
+    try:
+        import openpyxl  # type: ignore
+    except Exception as exc:
+        raise RuntimeError("缺少 openpyxl 依赖，无法执行 Excel 编辑。") from exc
+
+    recovery_note = ""
+    if target.exists():
+        try:
+            workbook = openpyxl.load_workbook(target)
+        except Exception as exc:
+            raw = str(exc)
+            if "File is not a zip file" in raw:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_path = target.with_name(f"{target.stem}.corrupt_{timestamp}{target.suffix}.bak")
+                try:
+                    target.replace(backup_path)
+                except Exception as move_exc:
+                    raise RuntimeError(
+                        "检测到 Excel 文件已损坏，且备份失败。请关闭占用程序后重试，或手动备份该文件。"
+                    ) from move_exc
+                workbook = openpyxl.Workbook()
+                recovery_note = f"检测到原文件损坏，已备份为 {backup_path.name} 并重建新文件。"
+            else:
+                raise RuntimeError(f"无法读取 Excel 文件：{raw}") from exc
+    else:
+        workbook = openpyxl.Workbook()
+    sheet_name = (sheet or "").strip()
+    if sheet_name:
+        if sheet_name in workbook.sheetnames:
+            ws = workbook[sheet_name]
+        else:
+            default_ws = workbook[workbook.sheetnames[0]]
+            default_is_blank = (
+                len(workbook.sheetnames) == 1
+                and default_ws.max_row <= 1
+                and default_ws.max_column <= 1
+                and default_ws.cell(1, 1).value in (None, "")
+            )
+            if default_is_blank:
+                default_ws.title = sheet_name
+                ws = default_ws
+            else:
+                ws = workbook.create_sheet(sheet_name)
+    else:
+        ws = workbook[workbook.sheetnames[0]]
+
+    set_count = 0
+    append_count = 0
+    append_dict_count = 0
+
+    if isinstance(set_cells, list):
+        for item in set_cells[:400]:
+            if not isinstance(item, dict):
+                continue
+            cell_ref = str(item.get("cell", "")).strip().upper()
+            if not cell_ref:
+                continue
+            ws[cell_ref] = item.get("value")
+            set_count += 1
+
+    if isinstance(append_rows, list):
+        for row in append_rows[:1000]:
+            if isinstance(row, list):
+                ws.append(row)
+                append_count += 1
+            elif isinstance(row, tuple):
+                ws.append(list(row))
+                append_count += 1
+
+    if isinstance(append_dict_rows, list):
+        dict_rows = [item for item in append_dict_rows[:1000] if isinstance(item, dict)]
+        if dict_rows:
+            first_row_values = [ws.cell(row=1, column=col).value for col in range(1, ws.max_column + 1)]
+            header_map: Dict[str, int] = {}
+            for index, value in enumerate(first_row_values, start=1):
+                key = str(value).strip() if value is not None else ""
+                if key:
+                    header_map[key] = index
+
+            # 若不存在有效表头，则按首条 dict 的 key 建立表头
+            if not header_map:
+                for index, key in enumerate(dict_rows[0].keys(), start=1):
+                    key_text = str(key).strip()
+                    if not key_text:
+                        continue
+                    ws.cell(row=1, column=index).value = key_text
+                    header_map[key_text] = index
+
+            # 若新数据有新字段，自动扩展表头到末列
+            for row_data in dict_rows:
+                for key in row_data.keys():
+                    key_text = str(key).strip()
+                    if not key_text or key_text in header_map:
+                        continue
+                    next_col = max(header_map.values(), default=0) + 1
+                    ws.cell(row=1, column=next_col).value = key_text
+                    header_map[key_text] = next_col
+
+            max_col = max(header_map.values(), default=0)
+            for row_data in dict_rows:
+                out_row = [None] * max_col
+                for key, value in row_data.items():
+                    key_text = str(key).strip()
+                    col = header_map.get(key_text)
+                    if not col:
+                        continue
+                    out_row[col - 1] = value
+                ws.append(out_row)
+                append_dict_count += 1
+
+    if set_count == 0 and append_count == 0 and append_dict_count == 0:
+        raise ValueError("xlsx_edit 未检测到有效变更（set_cells/append_rows/append_dict_rows 为空）。")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    workbook.active = workbook.sheetnames.index(ws.title)
+    workbook.save(target)
+    summary = (
+        f"{relative_path}（工作表: {ws.title}，写入单元格 {set_count} 项，"
+        f"追加数组行 {append_count} 行，追加字典行 {append_dict_count} 行）"
+    )
+    if recovery_note:
+        summary += f"，{recovery_note}"
+    return summary
 
 
 def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
@@ -150,36 +744,103 @@ def _workspace_execute_actions(root: Path, actions: List[Dict[str, Any]]) -> Lis
     for item in actions[:12]:
         action = str(item.get("action", "")).strip()
         rel = str(item.get("path", "")).strip()
-        if action == "list_files":
-            logs.append("[list_files] 已生成目录树")
-            continue
-        if action == "read_file":
-            content = _workspace_read(root, rel)
-            preview = content[:600]
-            logs.append(f"[read_file] {rel}\n{preview}")
-            continue
-        if action == "write_file":
-            content = str(item.get("content", ""))
-            _workspace_write(root, rel, content)
-            logs.append(f"[write_file] {rel} ({len(content)} chars)")
-            continue
-        if action == "append_file":
-            content = str(item.get("content", ""))
-            _workspace_append(root, rel, content)
-            logs.append(f"[append_file] {rel} (+{len(content)} chars)")
-            continue
-        if action == "replace_text":
-            old = str(item.get("old", ""))
-            new = str(item.get("new", ""))
-            replaced = _workspace_replace(root, rel, old, new)
-            logs.append(f"[replace_text] {rel} replacements={replaced}")
-            continue
-        logs.append(f"[skip] 未知 action: {action}")
+        try:
+            if action == "list_files":
+                logs.append("已生成目录清单。")
+                continue
+            if action == "read_file":
+                content = _workspace_read(root, rel)
+                preview = content[:600]
+                logs.append(f"已读取文件：{rel}\n{preview}")
+                continue
+            if action == "write_file":
+                content = str(item.get("content", ""))
+                _workspace_write(root, rel, content)
+                logs.append(f"已写入文件：{rel}（{len(content)} 字符）")
+                continue
+            if action == "append_file":
+                content = str(item.get("content", ""))
+                _workspace_append(root, rel, content)
+                logs.append(f"已追加文件：{rel}（+{len(content)} 字符）")
+                continue
+            if action == "replace_text":
+                old = str(item.get("old", ""))
+                new = str(item.get("new", ""))
+                replaced = _workspace_replace(root, rel, old, new)
+                logs.append(f"已替换文件：{rel}（替换 {replaced} 处）")
+                continue
+            if action == "xlsx_edit":
+                sheet = str(item.get("sheet", "")).strip() or None
+                set_cells = item.get("set_cells", [])
+                append_rows = item.get("append_rows", [])
+                append_dict_rows = item.get("append_dict_rows", [])
+                summary = _workspace_xlsx_edit(
+                    root,
+                    rel,
+                    sheet=sheet,
+                    set_cells=set_cells,
+                    append_rows=append_rows,
+                    append_dict_rows=append_dict_rows,
+                )
+                logs.append(f"已更新 Excel：{summary}")
+                continue
+            if action == "organize_reimbursement_package":
+                package_name = str(item.get("package_name", "")).strip() or None
+                options = item.get("options", {}) if isinstance(item.get("options", {}), dict) else {}
+                summary = _workspace_prepare_reimbursement_package(root, package_name=package_name, options=options)
+                logs.append(summary)
+                continue
+            logs.append(f"已跳过未知操作：{action}")
+        except PermissionError:
+            logs.append(
+                f"操作失败：{rel} 权限不足或文件被占用。请关闭占用该文件的程序（如 Excel/WPS）后重试。"
+            )
+        except ValueError as exc:
+            logs.append(f"操作失败：{exc}")
+        except Exception as exc:
+            logs.append(f"操作失败：{rel}，原因：{exc}")
     return logs
+
+
+def _workspace_result_text(base_reply: str, logs: List[str]) -> str:
+    reply = str(base_reply or "").strip() or "已处理你的目录请求。"
+    if not logs:
+        return reply
+    fail_count = sum(1 for item in logs if item.startswith("操作失败"))
+    success_count = max(len(logs) - fail_count, 0)
+    if fail_count == 0:
+        header = f"已完成本次操作（成功 {success_count} 项）。"
+    elif success_count == 0:
+        header = f"本次操作未成功（失败 {fail_count} 项）。"
+    else:
+        header = f"已部分完成（成功 {success_count} 项，失败 {fail_count} 项）。"
+    return f"{reply}\n\n{header}\n" + "\n".join(f"- {item}" for item in logs)
 
 
 def _parse_workspace_command(message: str) -> Optional[Dict[str, Any]]:
     text = message.strip()
+    # 直连解析：往某个 xlsx 中追加 N 条“学号/姓名”测试数据，避免依赖 LLM 规划不稳定
+    xlsx_path_match = re.search(r"[\"“]?([^\"”\n\r]*?\.xlsx)[\"”]?", text, flags=re.IGNORECASE)
+    if xlsx_path_match and ("测试数据" in text or "追加" in text):
+        target_path = xlsx_path_match.group(1).strip()
+        count_match = re.search(r"(\d+)\s*条", text)
+        count = int(count_match.group(1)) if count_match else 10
+        count = max(1, min(count, 2000))
+        sheet_match = re.search(r"\b(Sheet\d+)\b", text, flags=re.IGNORECASE)
+        requested_sheet = sheet_match.group(1) if sheet_match else "Sheet1"
+        rows = [{"学号": 1000 + i + 1, "姓名": f"测试{i + 1}"} for i in range(count)]
+        return {
+            "reply": f"已准备向 {target_path} 的 {requested_sheet} 追加 {count} 条测试数据。",
+            "actions": [
+                {
+                    "action": "xlsx_edit",
+                    "path": target_path,
+                    "sheet": requested_sheet,
+                    "append_dict_rows": rows,
+                }
+            ],
+        }
+
     if text.startswith("/list"):
         return {"reply": "目录如下：", "actions": [{"action": "list_files"}]}
 
@@ -225,10 +886,32 @@ def _parse_workspace_command(message: str) -> Optional[Dict[str, Any]]:
                     }
                 ],
             }
+    package_name_match = re.search(r"([A-Za-z0-9_\-\u4e00-\u9fa5]+\.zip)\b", text, flags=re.IGNORECASE)
+    needs_package = (
+        "报销" in text
+        and any(word in text for word in ["打包", "压缩", "压缩包"])
+        and any(word in text for word in ["整理", "材料", "附件", "自动"])
+    )
+    if needs_package:
+        package_name = package_name_match.group(1) if package_name_match else ""
+        return {
+            "reply": "已开始整理报销材料。若材料齐全会自动生成压缩包；若缺失会先提示你补齐。",
+            "actions": [
+                {
+                    "action": "organize_reimbursement_package",
+                    "package_name": package_name,
+                }
+            ],
+        }
     return None
 
 
-def _run_workspace_agent(message: str, payload: Dict[str, Any], history: List[Dict[str, str]]) -> Dict[str, Any]:
+def _run_workspace_agent(
+    message: str,
+    payload: Dict[str, Any],
+    history: List[Dict[str, str]],
+    memory_context: str = "",
+) -> Dict[str, Any]:
     workspace_root = _safe_workspace_root(payload)
     if workspace_root is None:
         return {
@@ -238,18 +921,39 @@ def _run_workspace_agent(message: str, payload: Dict[str, Any], history: List[Di
 
     directory_tree = _workspace_tree_text(workspace_root)
 
-    command_plan = _parse_workspace_command(message)
+    command_plan: Optional[Dict[str, Any]] = None
+
+    workspace_task = str(payload.get("workspace_task", "")).strip().lower()
+    if workspace_task == "reimbursement_package":
+        package_name = str(payload.get("package_name", "")).strip()
+        options = payload.get("reimbursement_package_options", {})
+        command_plan = {
+            "reply": "已按结构化任务开始整理报销材料。若缺失会先提示补齐。",
+            "actions": [
+                {
+                    "action": "organize_reimbursement_package",
+                    "package_name": package_name,
+                    "options": options if isinstance(options, dict) else {},
+                }
+            ],
+        }
+
+    if command_plan is None:
+        command_plan = _parse_workspace_command(message)
     if command_plan is not None:
         logs = _workspace_execute_actions(workspace_root, command_plan.get("actions", []))
         if command_plan.get("actions") and command_plan["actions"][0].get("action") == "list_files":
             return {
                 "ok": True,
-                "reply": f"{command_plan['reply']}\n\n{directory_tree}",
+                "reply": _workspace_result_text(
+                    str(command_plan.get("reply", "目录如下：")),
+                    [directory_tree],
+                ),
                 "mode": "workspace",
             }
         return {
             "ok": True,
-            "reply": f"{command_plan['reply']}\n\n" + "\n\n".join(logs),
+            "reply": _workspace_result_text(str(command_plan.get("reply", "已处理。")), logs),
             "mode": "workspace",
         }
 
@@ -260,7 +964,7 @@ def _run_workspace_agent(message: str, payload: Dict[str, Any], history: List[Di
         )
         planner_prompt = textwrap.dedent(
             f"""
-            你是本地代码编辑代理，需要在指定目录内操作文件。
+            你是本地代码编辑代理，需要在指定目录内操作文件，并向用户提供清晰说明。
             目录根路径: {workspace_root}
             当前目录树（节选）:
             {directory_tree}
@@ -268,18 +972,32 @@ def _run_workspace_agent(message: str, payload: Dict[str, Any], history: List[Di
             对话历史（最近）:
             {history_text or '(无)'}
 
+            记忆上下文（可用于保持连续性）:
+            {memory_context or '(无)'}
+
             用户请求:
             {message}
 
             请仅返回 JSON 对象，不要加解释文字。格式：
             {{
-              "reply": "给用户的简短说明",
+              "reply": "给用户的简短说明（先说做了什么，再说下一步建议）",
               "actions": [
                 {{"action": "list_files"}},
                 {{"action": "read_file", "path": "relative/path"}},
                 {{"action": "write_file", "path": "relative/path", "content": "..."}},
                 {{"action": "append_file", "path": "relative/path", "content": "..."}},
-                {{"action": "replace_text", "path": "relative/path", "old": "...", "new": "..."}}
+                {{"action": "replace_text", "path": "relative/path", "old": "...", "new": "..."}},
+                {{
+                  "action": "xlsx_edit",
+                  "path": "relative/path.xlsx",
+                  "sheet": "Sheet1",
+                  "set_cells": [{{"cell": "A1", "value": "标题"}}],
+                  "append_rows": [[1, "张三"], [2, "李四"]],
+                  "append_dict_rows": [
+                    {{"学号": 101, "姓名": "张三"}},
+                    {{"学号": 202, "姓名": "李四"}}
+                  ]
+                }}
               ]
             }}
 
@@ -287,6 +1005,11 @@ def _run_workspace_agent(message: str, payload: Dict[str, Any], history: List[Di
             1) path 必须是相对路径。
             2) 若需要改文件，优先 replace_text；若文件不存在再 write_file。
             3) 若用户只是询问，则 actions 可为空。
+            4) reply 使用用户可读语言，不要只输出技术术语；若执行失败，需要说明原因和可替代方案。
+            5) 若执行改动，reply 需要简要说明改动范围（改了哪些文件/内容）。
+            6) .xlsx/.xlsm 文件只能用 xlsx_edit，严禁用 write_file、append_file、replace_text 进行文本写入。
+            7) .xls/.docx/.pdf/图片/压缩包等二进制文件，禁止文本写入；若用户要求编辑，先说明限制并给可行替代方案。
+            8) 若用户给的是“按字段”的结构化数据，优先使用 append_dict_rows 按表头写入。
             """
         ).strip()
 
@@ -307,8 +1030,7 @@ def _run_workspace_agent(message: str, payload: Dict[str, Any], history: List[Di
             logs.append(directory_tree)
 
         reply = str(parsed.get("reply", "已完成目录操作。"))
-        if logs:
-            reply += "\n\n" + "\n\n".join(logs)
+        reply = _workspace_result_text(reply, logs)
         return {
             "ok": True,
             "reply": reply,
@@ -678,14 +1400,18 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
     payload = raw_payload if isinstance(raw_payload, dict) else {}
     history = payload.get("history", []) if isinstance(payload, dict) else []
     safe_history = history if isinstance(history, list) else []
+    if bool(payload.get("memory_reset", False)):
+        _reset_memory_session(payload)
+    memory_ctx = _memory_context(payload)
 
     if bool(payload.get("workspace_mode", False)):
         yield {"type": "status", "status": "正在处理目录编辑任务..."}
-        workspace_result = _run_workspace_agent(message, payload, safe_history)
+        workspace_result = _run_workspace_agent(message, payload, safe_history, memory_context=memory_ctx)
         if not workspace_result.get("ok", True):
             yield {"type": "error", "error": str(workspace_result.get("error", "目录任务失败"))}
             return
         reply = str(workspace_result.get("reply", "已处理"))
+        _remember_turn(payload, message, reply)
         for chunk in _iter_text_chunks(reply):
             yield {"type": "delta", "delta": chunk}
         yield {"type": "done", "response": {"ok": True, **workspace_result}}
@@ -700,6 +1426,7 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
             tool_name = str(step.get("tool_name", ""))
             yield {"type": "status", "status": f"步骤: {step_name} | Tool: {tool_name}"}
         reply = str(task_resp.get("reply", "任务完成"))
+        _remember_turn(payload, message, reply)
         for chunk in _iter_text_chunks(reply):
             yield {"type": "delta", "delta": chunk}
         yield {"type": "done", "response": {"ok": True, **task_resp}}
@@ -711,6 +1438,7 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
         yield {"type": "status", "status": "正在处理审计规则..."}
         reply = str(rule_result.get("reply", ""))
         report_markdown = str(rule_result.get("report_markdown", "") or "")
+        _remember_turn(payload, message, reply + (f"\n\n{report_markdown}" if report_markdown else ""))
         for chunk in _iter_text_chunks(reply):
             yield {"type": "delta", "delta": chunk}
         if report_markdown:
@@ -720,7 +1448,7 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
 
     if _is_llm_enabled():
         yield {"type": "status", "status": "正在调用 RAG 知识库检索..."}
-        kb_context = _get_kb_context(message)
+        kb_context = _merge_context_blocks(_get_kb_context(message), memory_ctx)
         yield {"type": "status", "status": "正在生成回答..."}
         streamed_reply = ""
         try:
@@ -732,10 +1460,12 @@ def handle_request_stream(request: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
             for chunk in _iter_text_chunks(streamed_reply):
                 yield {"type": "delta", "delta": chunk}
 
+        _remember_turn(payload, message, streamed_reply)
         yield {"type": "done", "response": {"ok": True, "reply": streamed_reply, "mode": "llm"}}
         return
 
     reply = _help_text()
+    _remember_turn(payload, message, reply)
     for chunk in _iter_text_chunks(reply):
         yield {"type": "delta", "delta": chunk}
     yield {"type": "done", "response": {"ok": True, "reply": reply}}
@@ -747,24 +1477,36 @@ def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
     payload = raw_payload if isinstance(raw_payload, dict) else {}
     history = payload.get("history", []) if isinstance(payload, dict) else []
     safe_history = history if isinstance(history, list) else []
+    if bool(payload.get("memory_reset", False)):
+        _reset_memory_session(payload)
+    memory_ctx = _memory_context(payload)
 
     if bool(payload.get("workspace_mode", False)):
-        return _run_workspace_agent(message, payload, safe_history)
+        workspace_result = _run_workspace_agent(message, payload, safe_history, memory_context=memory_ctx)
+        _remember_turn(payload, message, str(workspace_result.get("reply", "")))
+        return workspace_result
 
     task_type, task_payload = _extract_task_request(message, payload)
     if task_type:
-        return {"ok": True, **_run_v2_task(task_type, task_payload)}
+        result = {"ok": True, **_run_v2_task(task_type, task_payload)}
+        _remember_turn(payload, message, str(result.get("reply", "")))
+        return result
 
     rule_result = _rule_reply(message, payload)
     if rule_result is not None:
-        return {"ok": True, **rule_result}
+        result = {"ok": True, **rule_result}
+        _remember_turn(payload, message, str(result.get("reply", "")))
+        return result
 
     if _is_llm_enabled():
-        kb_context = _get_kb_context(message)
+        kb_context = _merge_context_blocks(_get_kb_context(message), memory_ctx)
         llm_reply = _llm_chat(message=message, history=safe_history, kb_context=kb_context)
+        _remember_turn(payload, message, llm_reply)
         return {"ok": True, "reply": llm_reply, "mode": "llm"}
 
-    return {"ok": True, "reply": _help_text()}
+    fallback = _help_text()
+    _remember_turn(payload, message, fallback)
+    return {"ok": True, "reply": fallback}
 
 
 def _configure_stdio() -> None:

@@ -1,20 +1,27 @@
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 
+const EXCEL_PREVIEW_MAX_ROWS = 200;
+const EXCEL_PREVIEW_MAX_COLS = 60;
+
 export type SheetPreview = {
   name: string;
   rows: string[][];
+  html?: string;
 };
 
 export type TemplatePreview = {
   filePath: string;
-  fileType: "xlsx" | "xls" | "docx" | "unknown";
+  fileType: "xlsx" | "xls" | "docx" | "doc" | "pdf" | "unknown";
   updatedAt: string;
   textSections: string[];
   sheets: SheetPreview[];
+  htmlContent?: string;
+  fileUrl?: string;
   warnings: string[];
 };
 
@@ -29,38 +36,123 @@ function extToType(filePath: string): TemplatePreview["fileType"] {
   if (ext === ".docx") {
     return "docx";
   }
+  if (ext === ".doc") {
+    return "doc";
+  }
+  if (ext === ".pdf") {
+    return "pdf";
+  }
   return "unknown";
 }
 
-function readExcel(filePath: string): SheetPreview[] {
-  const workbook = XLSX.readFile(filePath, { cellDates: true });
-  return workbook.SheetNames.map((sheetName) => {
-    const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(worksheet, {
-      header: 1,
-      blankrows: false,
-      raw: false,
-    });
-
-    const normalizedRows = rows
-      .slice(0, 200)
-      .map((row) => row.map((cell) => (cell === null || cell === undefined ? "" : String(cell))));
-
-    return {
-      name: sheetName,
-      rows: normalizedRows,
-    };
-  });
+function stringifyExcelCellValue(cell: XLSX.CellObject | undefined): string {
+  if (!cell) return "";
+  if (typeof cell.w === "string" && cell.w.length > 0) {
+    return normalizeExcelText(cell.w);
+  }
+  if (cell.v === null || cell.v === undefined) {
+    return "";
+  }
+  return normalizeExcelText(String(cell.v));
 }
 
-async function readDocx(filePath: string): Promise<string[]> {
-  const result = await mammoth.extractRawText({ path: filePath });
-  const textBlocks = result.value
+function shouldFixMojibake(text: string): boolean {
+  if (!text) return false;
+  if (/[\u4e00-\u9fff]/.test(text)) return false;
+  const suspiciousChars = text.match(/[À-ÿ]/g);
+  if (!suspiciousChars || suspiciousChars.length < 2) {
+    return false;
+  }
+  // Common UTF-8 mojibake fingerprints like: å¹´ä»½
+  return /(?:Ã.|Â.|å.|ä.|æ.|ç.|é.|è.|ö.|ø.)/.test(text);
+}
+
+function normalizeExcelText(text: string): string {
+  const source = String(text ?? "");
+  if (!shouldFixMojibake(source)) {
+    return source;
+  }
+
+  try {
+    const repaired = Buffer.from(source, "latin1").toString("utf8");
+    if (!repaired || repaired.includes("�")) {
+      return source;
+    }
+
+    const repairedCjkCount = (repaired.match(/[\u4e00-\u9fff]/g) ?? []).length;
+    const sourceCjkCount = (source.match(/[\u4e00-\u9fff]/g) ?? []).length;
+    if (repairedCjkCount > sourceCjkCount) {
+      return repaired;
+    }
+    return source;
+  } catch {
+    return source;
+  }
+}
+
+function readExcel(filePath: string): { sheets: SheetPreview[]; warnings: string[] } {
+  const workbook = XLSX.readFile(filePath, { cellDates: true });
+  const warnings: string[] = [];
+
+  const sheets = workbook.SheetNames.map((sheetName) => {
+    const worksheet = workbook.Sheets[sheetName];
+    const ref = String(worksheet["!ref"] ?? "");
+    const decoded = ref ? XLSX.utils.decode_range(ref) : null;
+
+    if (!decoded) {
+      return { name: sheetName, rows: [], html: "" };
+    }
+
+    const sourceRowCount = decoded.e.r - decoded.s.r + 1;
+    const sourceColCount = decoded.e.c - decoded.s.c + 1;
+    const rowCount = Math.min(sourceRowCount, EXCEL_PREVIEW_MAX_ROWS);
+    const colCount = Math.min(sourceColCount, EXCEL_PREVIEW_MAX_COLS);
+    const normalizedRows: string[][] = [];
+
+    for (let rowOffset = 0; rowOffset < rowCount; rowOffset += 1) {
+      const row: string[] = [];
+      const rowIndex = decoded.s.r + rowOffset;
+
+      for (let colOffset = 0; colOffset < colCount; colOffset += 1) {
+        const colIndex = decoded.s.c + colOffset;
+        const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+        row.push(stringifyExcelCellValue(worksheet[cellAddress] as XLSX.CellObject | undefined));
+      }
+
+      normalizedRows.push(row);
+    }
+
+    if (sourceRowCount > EXCEL_PREVIEW_MAX_ROWS || sourceColCount > EXCEL_PREVIEW_MAX_COLS) {
+      warnings.push(
+        `工作表「${sheetName}」仅展示前 ${EXCEL_PREVIEW_MAX_ROWS} 行、${EXCEL_PREVIEW_MAX_COLS} 列。`
+      );
+    }
+
+    const htmlSourceRows = normalizedRows.slice(0, 120).map((row) => row.slice(0, 40));
+    const html = XLSX.utils.sheet_to_html(XLSX.utils.aoa_to_sheet(htmlSourceRows));
+
+    return { name: sheetName, rows: normalizedRows, html };
+  });
+
+  return { sheets, warnings };
+}
+
+async function readDocx(filePath: string): Promise<{ textSections: string[]; htmlContent?: string }> {
+  const [rawText, htmlResult] = await Promise.all([
+    mammoth.extractRawText({ path: filePath }),
+    mammoth.convertToHtml({ path: filePath }),
+  ]);
+
+  const textBlocks = rawText.value
     .split(/\r?\n\r?\n/g)
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 200);
-  return textBlocks;
+  const htmlContent = String(htmlResult.value ?? "").trim();
+  return {
+    textSections: textBlocks,
+    htmlContent: htmlContent || undefined,
+  };
 }
 
 export async function parseTemplate(filePath: string): Promise<TemplatePreview> {
@@ -74,19 +166,35 @@ export async function parseTemplate(filePath: string): Promise<TemplatePreview> 
     updatedAt: stat.mtime.toISOString(),
     textSections: [],
     sheets: [],
+    htmlContent: undefined,
+    fileUrl: undefined,
     warnings,
   };
 
   if (fileType === "xlsx" || fileType === "xls") {
-    base.sheets = readExcel(filePath);
+    const excel = readExcel(filePath);
+    base.sheets = excel.sheets;
+    base.warnings.push(...excel.warnings);
     return base;
   }
 
   if (fileType === "docx") {
-    base.textSections = await readDocx(filePath);
+    const docx = await readDocx(filePath);
+    base.textSections = docx.textSections;
+    base.htmlContent = docx.htmlContent;
     return base;
   }
 
-  warnings.push("当前仅支持 xlsx/xls/docx 模板预览。");
+  if (fileType === "doc") {
+    warnings.push("`.doc` 为旧版 Word 二进制格式，预览可能不完整，建议另存为 `.docx`。");
+    return base;
+  }
+
+  if (fileType === "pdf") {
+    base.fileUrl = pathToFileURL(filePath).toString();
+    return base;
+  }
+
+  warnings.push("当前仅支持 xlsx/xls/docx/doc/pdf 预览。");
   return base;
 }
