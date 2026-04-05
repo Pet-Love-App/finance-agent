@@ -10,6 +10,19 @@ type AgentChatStreamEvent =
   | { chatId: string; type: "done"; response: unknown }
   | { chatId: string; type: "error"; error: string };
 
+type ChatSessionMeta = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+};
+
+type ChatSessionsState = {
+  activeSessionId: string | null;
+  sessions: ChatSessionMeta[];
+};
+
 const api = {
   openTemplate: async (): Promise<string | null> => ipcRenderer.invoke("template:open"),
   getPredefinedTemplate: async (type: string): Promise<string> => ipcRenderer.invoke("template:exportPredefined", type),
@@ -50,12 +63,32 @@ const api = {
   getChatHistory: async (): Promise<unknown> => ipcRenderer.invoke("chat:history:get"),
   setChatHistory: async (history: unknown): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("chat:history:set", history),
+  listChatSessions: async (): Promise<ChatSessionsState> => ipcRenderer.invoke("chat:sessions:list"),
+  createChatSession: async (title?: string): Promise<unknown> =>
+    ipcRenderer.invoke("chat:sessions:create", { title }),
+  switchChatSession: async (
+    sessionId: string
+  ): Promise<{ ok: boolean; activeSessionId?: string; history?: unknown; error?: string }> =>
+    ipcRenderer.invoke("chat:sessions:switch", sessionId),
+  renameChatSession: async (sessionId: string, title: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("chat:sessions:rename", { sessionId, title }),
+  deleteChatSession: async (
+    sessionId: string
+  ): Promise<{ ok: boolean; activeSessionId?: string; history?: unknown; error?: string }> =>
+    ipcRenderer.invoke("chat:sessions:delete", sessionId),
   subscribeChatHistory: (handler: (history: unknown) => void): Unsubscribe => {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => {
       handler(payload);
     };
     ipcRenderer.on("chat:history:update", wrapped);
     return () => ipcRenderer.removeListener("chat:history:update", wrapped);
+  },
+  subscribeChatSessions: (handler: (payload: ChatSessionsState) => void): Unsubscribe => {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: ChatSessionsState) => {
+      handler(payload);
+    };
+    ipcRenderer.on("chat:sessions:update", wrapped);
+    return () => ipcRenderer.removeListener("chat:sessions:update", wrapped);
   },
   subscribeAgentChatEvent: (handler: (event: AgentChatStreamEvent) => void): Unsubscribe => {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: AgentChatStreamEvent) => {

@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import chokidar, { type FSWatcher } from "chokidar";
 import dotenv from "dotenv";
 import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
+import type { OpenDialogOptions } from "electron";
 
 import { parseTemplate } from "./templateParser";
 
@@ -15,7 +16,19 @@ dotenv.config({ path: path.join(process.cwd(), ".env") });
 let mainWindow: BrowserWindow | null = null;
 let petWindow: BrowserWindow | null = null;
 let petChatWindow: BrowserWindow | null = null;
-let sharedChatHistory: Array<{ role: string; content: string; status?: string }> = [];
+type SharedChatMessage = { role: string; content: string; status?: string };
+type ChatSession = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  history: SharedChatMessage[];
+};
+
+const DEFAULT_CHAT_SESSION_TITLE = "新会话";
+let legacySharedChatHistory: SharedChatMessage[] = [];
+let sharedChatSessions: ChatSession[] = [];
+let activeChatSessionId: string | null = null;
 let watcher: FSWatcher | null = null;
 let currentFilePath: string | null = null;
 const activeChatProcesses = new Map<string, ReturnType<typeof spawn>>();
@@ -439,12 +452,106 @@ function emitWorkspaceUpdated(): void {
 }
 
 function emitChatHistoryUpdate(): void {
+  const activeSession = getActiveChatSession();
+  const history = activeSession?.history ?? [];
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("chat:history:update", sharedChatHistory);
+    mainWindow.webContents.send("chat:history:update", history);
   }
   if (petChatWindow && !petChatWindow.isDestroyed()) {
-    petChatWindow.webContents.send("chat:history:update", sharedChatHistory);
+    petChatWindow.webContents.send("chat:history:update", history);
   }
+}
+
+type ChatSessionMeta = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+};
+
+function sanitizeChatHistory(history: Array<{ role: string; content: string; status?: string }>): SharedChatMessage[] {
+  return history.map((item) => ({
+    role: String(item.role ?? ""),
+    content: String(item.content ?? ""),
+    status: typeof item.status === "string" ? item.status : undefined,
+  }));
+}
+
+function deriveSessionTitleFromHistory(history: SharedChatMessage[]): string {
+  const userMessage = history.find((item) => item.role === "user" && item.content.trim());
+  if (!userMessage) {
+    return DEFAULT_CHAT_SESSION_TITLE;
+  }
+  const firstLine = userMessage.content.trim().replace(/\s+/g, " ");
+  return firstLine.slice(0, 24) || DEFAULT_CHAT_SESSION_TITLE;
+}
+
+function toChatSessionMeta(session: ChatSession): ChatSessionMeta {
+  return {
+    id: session.id,
+    title: session.title,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    messageCount: session.history.length,
+  };
+}
+
+function getChatSessionById(sessionId: string): ChatSession | undefined {
+  return sharedChatSessions.find((session) => session.id === sessionId);
+}
+
+function getActiveChatSession(): ChatSession | undefined {
+  if (!activeChatSessionId) {
+    return undefined;
+  }
+  return getChatSessionById(activeChatSessionId);
+}
+
+function createChatSession(initialHistory: SharedChatMessage[] = []): ChatSession {
+  const now = new Date().toISOString();
+  const session: ChatSession = {
+    id: randomUUID(),
+    title: deriveSessionTitleFromHistory(initialHistory),
+    createdAt: now,
+    updatedAt: now,
+    history: initialHistory,
+  };
+  sharedChatSessions = [session, ...sharedChatSessions];
+  activeChatSessionId = session.id;
+  return session;
+}
+
+function ensureChatSessionsInitialized(): void {
+  if (sharedChatSessions.length > 0 && activeChatSessionId) {
+    return;
+  }
+  const initialHistory = legacySharedChatHistory.length > 0 ? legacySharedChatHistory : [];
+  createChatSession(initialHistory);
+  legacySharedChatHistory = [];
+}
+
+function emitChatSessionsUpdate(): void {
+  ensureChatSessionsInitialized();
+  const payload = {
+    activeSessionId: activeChatSessionId,
+    sessions: sharedChatSessions.map(toChatSessionMeta),
+  };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("chat:sessions:update", payload);
+  }
+  if (petChatWindow && !petChatWindow.isDestroyed()) {
+    petChatWindow.webContents.send("chat:sessions:update", payload);
+  }
+}
+
+function getDialogParentWindow(...candidates: Array<BrowserWindow | null>): BrowserWindow | undefined {
+  for (const candidate of candidates) {
+    if (candidate && !candidate.isDestroyed()) {
+      return candidate;
+    }
+  }
+  return undefined;
 }
 
 function normalizeWorkspaceDir(candidatePath: string): string | null {
@@ -567,7 +674,7 @@ ipcMain.handle("template:open", async () => {
     title: "选择模板文件",
     properties: ["openFile"],
     filters: [
-      { name: "模板文件", extensions: ["xlsx", "xls", "docx"] },
+      { name: "可预览文件", extensions: ["xlsx", "xls", "docx", "doc", "pdf"] },
       { name: "All Files", extensions: ["*"] },
     ],
   });
@@ -585,10 +692,12 @@ ipcMain.handle("template:getProjectDir", () => {
 });
 
 ipcMain.handle("template:pickDir", async () => {
-  const result = await dialog.showOpenDialog({
+  const parent = getDialogParentWindow(mainWindow);
+  const options: OpenDialogOptions = {
     title: "选择目录",
     properties: ["openDirectory"],
-  });
+  };
+  const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
   if (result.canceled || result.filePaths.length === 0) {
     return { ok: false, message: "已取消" };
   }
@@ -809,22 +918,112 @@ ipcMain.handle("agent:chat:stop", async (_event, chatId: string) => {
   activeChatProcesses.delete(chatId);
 });
 
-ipcMain.handle("chat:history:get", async () => sharedChatHistory);
+ipcMain.handle("chat:history:get", async () => {
+  ensureChatSessionsInitialized();
+  return getActiveChatSession()?.history ?? [];
+});
 
 ipcMain.handle(
   "chat:history:set",
   async (_event, history: Array<{ role: string; content: string; status?: string }>) => {
-    if (Array.isArray(history)) {
-      sharedChatHistory = history.map((item) => ({
-        role: String(item.role ?? ""),
-        content: String(item.content ?? ""),
-        status: typeof item.status === "string" ? item.status : undefined,
-      }));
+    ensureChatSessionsInitialized();
+    if (Array.isArray(history) && activeChatSessionId) {
+      const session = getChatSessionById(activeChatSessionId);
+      if (session) {
+        session.history = sanitizeChatHistory(history);
+        session.updatedAt = new Date().toISOString();
+        if (session.title === DEFAULT_CHAT_SESSION_TITLE) {
+          session.title = deriveSessionTitleFromHistory(session.history);
+        }
+      }
       emitChatHistoryUpdate();
+      emitChatSessionsUpdate();
     }
     return { ok: true };
   }
 );
+
+ipcMain.handle("chat:sessions:list", async () => {
+  ensureChatSessionsInitialized();
+  return {
+    activeSessionId: activeChatSessionId,
+    sessions: sharedChatSessions.map(toChatSessionMeta),
+  };
+});
+
+ipcMain.handle("chat:sessions:create", async (_event, input?: { title?: string }) => {
+  ensureChatSessionsInitialized();
+  const requestedTitle = String(input?.title ?? "").trim();
+  const session = createChatSession();
+  if (requestedTitle) {
+    session.title = requestedTitle.slice(0, 60);
+  }
+  emitChatHistoryUpdate();
+  emitChatSessionsUpdate();
+  return {
+    ok: true,
+    activeSessionId: session.id,
+    session: toChatSessionMeta(session),
+    history: session.history,
+  };
+});
+
+ipcMain.handle("chat:sessions:switch", async (_event, sessionId: string) => {
+  ensureChatSessionsInitialized();
+  const session = getChatSessionById(String(sessionId ?? ""));
+  if (!session) {
+    return { ok: false, error: "会话不存在" };
+  }
+  activeChatSessionId = session.id;
+  emitChatHistoryUpdate();
+  emitChatSessionsUpdate();
+  return { ok: true, activeSessionId: session.id, history: session.history };
+});
+
+ipcMain.handle("chat:sessions:rename", async (_event, input: { sessionId: string; title: string }) => {
+  ensureChatSessionsInitialized();
+  const sessionId = String(input?.sessionId ?? "");
+  const title = String(input?.title ?? "").trim();
+  const session = getChatSessionById(sessionId);
+  if (!session) {
+    return { ok: false, error: "会话不存在" };
+  }
+  session.title = (title || DEFAULT_CHAT_SESSION_TITLE).slice(0, 60);
+  session.updatedAt = new Date().toISOString();
+  emitChatSessionsUpdate();
+  return { ok: true };
+});
+
+ipcMain.handle("chat:sessions:delete", async (_event, sessionId: string) => {
+  ensureChatSessionsInitialized();
+  const targetId = String(sessionId ?? "");
+  const target = getChatSessionById(targetId);
+  if (!target) {
+    return { ok: false, error: "会话不存在" };
+  }
+
+  if (sharedChatSessions.length <= 1) {
+    target.history = [];
+    target.title = DEFAULT_CHAT_SESSION_TITLE;
+    target.updatedAt = new Date().toISOString();
+    activeChatSessionId = target.id;
+    emitChatHistoryUpdate();
+    emitChatSessionsUpdate();
+    return { ok: true, activeSessionId: target.id, history: target.history };
+  }
+
+  sharedChatSessions = sharedChatSessions.filter((item) => item.id !== targetId);
+  if (!activeChatSessionId || activeChatSessionId === targetId) {
+    activeChatSessionId = sharedChatSessions[0]?.id ?? null;
+  }
+  emitChatHistoryUpdate();
+  emitChatSessionsUpdate();
+  return {
+    ok: true,
+    activeSessionId: activeChatSessionId,
+    history: getActiveChatSession()?.history ?? [],
+  };
+});
 
 ipcMain.handle("pet:openMain", async () => {
   showOrCreateMainWindow();
@@ -853,20 +1052,29 @@ ipcMain.handle("pet:setWorkspaceDir", async (_event, droppedPath: string) => {
 });
 
 ipcMain.handle("pet:pickWorkspaceDir", async () => {
-  const result = await dialog.showOpenDialog({
-    title: "选择目录",
-    properties: ["openDirectory"],
-  });
-  if (result.canceled || result.filePaths.length === 0) {
-    return { ok: false, message: "已取消" };
+  const parent = getDialogParentWindow(petChatWindow, petWindow, mainWindow);
+  try {
+    const options: OpenDialogOptions = {
+      title: "选择目录",
+      properties: ["openDirectory"],
+    };
+    const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, message: "已取消" };
+    }
+    const dir = normalizeWorkspaceDir(result.filePaths[0]);
+    if (!dir) {
+      return { ok: false, message: "目录无效" };
+    }
+    petWorkspaceDir = dir;
+    emitWorkspaceUpdated();
+    return { ok: true, dir };
+  } finally {
+    if (petChatWindow && !petChatWindow.isDestroyed()) {
+      petChatWindow.setAlwaysOnTop(true, "screen-saver");
+      petChatWindow.focus();
+    }
   }
-  const dir = normalizeWorkspaceDir(result.filePaths[0]);
-  if (!dir) {
-    return { ok: false, message: "目录无效" };
-  }
-  petWorkspaceDir = dir;
-  emitWorkspaceUpdated();
-  return { ok: true, dir };
 });
 
 ipcMain.handle("pet:move:begin", async (_event, payload: { screenX: number; screenY: number }) => {

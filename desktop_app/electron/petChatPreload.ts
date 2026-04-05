@@ -8,6 +8,19 @@ type ChatStreamEvent =
   | { chatId: string; type: "done"; response: unknown }
   | { chatId: string; type: "error"; error: string };
 
+type ChatSessionMeta = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+};
+
+type ChatSessionsState = {
+  activeSessionId: string | null;
+  sessions: ChatSessionMeta[];
+};
+
 const api = {
   getWorkspaceDir: async (): Promise<string | null> => ipcRenderer.invoke("pet:getWorkspaceDir"),
   chat: async (message: string, history: ChatMessage[]): Promise<{ ok: boolean; reply?: string; error?: string }> =>
@@ -21,6 +34,19 @@ const api = {
   getChatHistory: async (): Promise<unknown> => ipcRenderer.invoke("chat:history:get"),
   setChatHistory: async (history: unknown): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("chat:history:set", history),
+  listChatSessions: async (): Promise<ChatSessionsState> => ipcRenderer.invoke("chat:sessions:list"),
+  createChatSession: async (title?: string): Promise<unknown> =>
+    ipcRenderer.invoke("chat:sessions:create", { title }),
+  switchChatSession: async (
+    sessionId: string
+  ): Promise<{ ok: boolean; activeSessionId?: string; history?: unknown; error?: string }> =>
+    ipcRenderer.invoke("chat:sessions:switch", sessionId),
+  renameChatSession: async (sessionId: string, title: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("chat:sessions:rename", { sessionId, title }),
+  deleteChatSession: async (
+    sessionId: string
+  ): Promise<{ ok: boolean; activeSessionId?: string; history?: unknown; error?: string }> =>
+    ipcRenderer.invoke("chat:sessions:delete", sessionId),
   openMainWindow: async (): Promise<void> => ipcRenderer.invoke("pet:openMain"),
   closePetChat: async (): Promise<void> => ipcRenderer.invoke("pet:closeChat"),
   pickWorkspaceDir: async (): Promise<{ ok: boolean; dir?: string; message?: string }> =>
@@ -39,6 +65,11 @@ const api = {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => handler(payload);
     ipcRenderer.on("chat:history:update", wrapped);
     return () => ipcRenderer.removeListener("chat:history:update", wrapped);
+  },
+  subscribeChatSessions: (handler: (payload: ChatSessionsState) => void): (() => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: ChatSessionsState) => handler(payload);
+    ipcRenderer.on("chat:sessions:update", wrapped);
+    return () => ipcRenderer.removeListener("chat:sessions:update", wrapped);
   },
 };
 

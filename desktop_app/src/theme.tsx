@@ -43,14 +43,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const algorithm = mode === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm;
 
+  const primary = mode === "dark" ? "#7aa2ff" : "#2563eb";
+
   return (
     <ThemeContext.Provider value={value}>
       <ConfigProvider
         theme={{
           algorithm,
           token: {
-            colorPrimary: "#1E3A8A",
-            borderRadius: 12,
+            colorPrimary: primary,
+            colorLink: primary,
+            borderRadius: 14,
+            controlHeight: 36,
             fontFamily: '"IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif',
           },
         }}

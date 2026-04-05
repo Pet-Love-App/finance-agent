@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Input, Select, Space, Typography } from "antd";
 import { FileOutlined, FolderOpenOutlined, FolderOutlined } from "@ant-design/icons";
 
@@ -39,7 +39,14 @@ const TASK_HISTORY_STORAGE_KEY = "agent_task_history_v1";
 const TASK_SUMMARY_STORAGE_KEY = "agent_task_summary_v1";
 const DEFAULT_CHAT_MESSAGE: ChatMessage = {
   role: "agent",
-  content: "可让我在绑定目录内读取/修改文件。建议描述：文件路径 + 修改目标。",
+  content: "你好，我已就绪。你可以直接提问报销规则，或选择任务类型后描述目标，我会给出可执行结果。",
+};
+
+const TASK_META: Record<TaskType, { label: string; demo: string }> = {
+  qa: { label: "报销问答", demo: "餐饮发票能报销吗？" },
+  reimburse: { label: "单次报销", demo: "2026-03-10 在教室举办活动，产生交通支出" },
+  final_account: { label: "年度决算", demo: "请生成年度决算" },
+  budget: { label: "预算生成", demo: "请生成下一年度预算" },
 };
 
 export default function App() {
@@ -63,6 +70,7 @@ export default function App() {
   const [expandedPaths, setExpandedPaths] = useState<string[]>([]);
   const [loadingPaths, setLoadingPaths] = useState<string[]>([]);
   const [treeLoading, setTreeLoading] = useState(false);
+  const treeRefreshInFlightRef = useRef(false);
 
   const appRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -211,6 +219,48 @@ export default function App() {
     });
   };
 
+  const mergeEntriesWithExistingNodes = (
+    entries: FileTreeNode[],
+    existingNodes: FileTreeNode[] = []
+  ): FileTreeNode[] => {
+    const existingMap = new Map(existingNodes.map((node) => [node.path, node]));
+    return entries.map((entry) => {
+      const prev = existingMap.get(entry.path);
+      return {
+        ...entry,
+        loaded: prev?.loaded ?? false,
+        children: prev?.children,
+      };
+    });
+  };
+
+  const refreshTreeNodes = async () => {
+    if (!rootDir || !bridge || typeof bridge.listDir !== "function") return;
+    if (treeRefreshInFlightRef.current) return;
+    treeRefreshInFlightRef.current = true;
+    try {
+      const expandedSnapshot = [...expandedPaths];
+      const rootEntries = await bridge.listDir(rootDir);
+      if (rootEntries?.ok && Array.isArray(rootEntries.entries)) {
+        setTreeNodes((prev) => mergeEntriesWithExistingNodes(rootEntries.entries as FileTreeNode[], prev));
+      }
+
+      for (const dirPath of expandedSnapshot) {
+        const result = await bridge.listDir(dirPath);
+        if (!result?.ok || !Array.isArray(result.entries)) continue;
+        setTreeNodes((prev) =>
+          updateTreeNode(prev, dirPath, (node) => ({
+            ...node,
+            loaded: true,
+            children: mergeEntriesWithExistingNodes(result.entries as FileTreeNode[], node.children ?? []),
+          }))
+        );
+      }
+    } finally {
+      treeRefreshInFlightRef.current = false;
+    }
+  };
+
   const loadDirectoryChildren = async (dirPath: string) => {
     if (!bridge || typeof bridge.listDir !== "function") return;
     if (loadingPaths.includes(dirPath)) return;
@@ -269,17 +319,21 @@ export default function App() {
     if (!rootDir || !bridge || typeof bridge.listDir !== "function") return;
     setTreeLoading(true);
     try {
-      const entries = await bridge.listDir(rootDir);
-      if (entries?.ok && Array.isArray(entries.entries)) {
-        setTreeNodes(entries.entries.map((entry: FileTreeNode) => ({ ...entry, loaded: false })));
-        setExpandedPaths([]);
-      } else {
-        setTreeNodes([]);
-      }
+      await refreshTreeNodes();
     } finally {
       setTreeLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!rootDir || !bridge || typeof bridge.listDir !== "function") {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshTreeNodes();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [rootDir, bridge, expandedPaths]);
 
   const renderTreeNodes = (nodes: FileTreeNode[], depth = 0) => {
     return nodes.map((node) => {
@@ -520,10 +574,7 @@ export default function App() {
   };
 
   const getTaskDemoPrompt = (task: TaskType): string => {
-    if (task === "qa") return "餐饮发票能报销吗？";
-    if (task === "reimburse") return "2026-03-10 在教室举办活动，产生交通支出";
-    if (task === "final_account") return "请生成年度决算";
-    return "请生成下一年度预算";
+    return TASK_META[task].demo;
   };
 
   const formatTaskResult = (task: TaskType, taskResult?: Record<string, unknown>): string => {
@@ -534,14 +585,14 @@ export default function App() {
     if (task === "qa") {
       const answer = String(taskResult.answer ?? "");
       const citations = Array.isArray(taskResult.citations) ? taskResult.citations.length : 0;
-      return `\n\n### 任务结果\n- 任务类型: 报销问答\n- 引用条目: ${citations}\n\n${answer}`;
+      return `\n\n### 任务结果\n- 任务类型: ${TASK_META[task].label}\n- 引用条目: ${citations}\n\n${answer}`;
     }
 
     if (task === "reimburse") {
       const recordId = taskResult.record_id ?? "N/A";
       const outputs = (taskResult.outputs as Record<string, unknown>) || {};
       return (
-        `\n\n### 任务结果\n- 任务类型: 单次报销\n- 记录ID: ${recordId}` +
+        `\n\n### 任务结果\n- 任务类型: ${TASK_META[task].label}\n- 记录ID: ${recordId}` +
         `\n- Word: ${String(outputs.word_path ?? "")}` +
         `\n- Excel: ${String(outputs.excel_path ?? "")}` +
         `\n- EML: ${String(outputs.eml_path ?? "")}`
@@ -549,11 +600,11 @@ export default function App() {
     }
 
     if (task === "final_account") {
-      return `\n\n### 任务结果\n- 任务类型: 年度决算\n- 决算文件: ${String(taskResult.final_account_path ?? "")}`;
+      return `\n\n### 任务结果\n- 任务类型: ${TASK_META[task].label}\n- 决算文件: ${String(taskResult.final_account_path ?? "")}`;
     }
 
     return (
-      `\n\n### 任务结果\n- 任务类型: 预算生成` +
+      `\n\n### 任务结果\n- 任务类型: ${TASK_META[task].label}` +
       `\n- 预算文件: ${String(taskResult.budget_path ?? "")}` +
       `\n- 报告文件: ${String(taskResult.report_path ?? "")}`
     );
@@ -594,6 +645,69 @@ export default function App() {
     setTaskHistory((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
 
+  const clearTaskHistory = () => {
+    setTaskHistory([]);
+  };
+
+  const clearChatMessages = () => {
+    setMessages([DEFAULT_CHAT_MESSAGE]);
+  };
+
+  const buildFriendlyError = (input: unknown): { short: string; detail: string } => {
+    const raw = String(input ?? "未知错误").trim() || "未知错误";
+    const lower = raw.toLowerCase();
+
+    if (lower.includes("not a zip file")) {
+      return {
+        short: "Excel 文件已损坏",
+        detail:
+          "调用失败：目标 Excel 文件结构异常，无法直接读取。\n\n" +
+          "建议：\n" +
+          "1. 若系统已自动备份并重建，请重试本次写入。\n" +
+          "2. 若仍失败，请从备份恢复原文件后再编辑。\n" +
+          "3. 之后请仅使用 xlsx 专用编辑能力，避免文本写入 .xlsx。\n\n" +
+          `原始错误：${raw}`,
+      };
+    }
+
+    if (
+      lower.includes("permission denied") ||
+      raw.includes("权限不足") ||
+      raw.includes("文件被占用")
+    ) {
+      return {
+        short: "文件无法写入（可能被占用）",
+        detail:
+          "调用失败：无法写入目标文件。\n\n" +
+          "建议：\n" +
+          "1. 关闭正在打开该文件的 Excel/WPS。\n" +
+          "2. 确认目标目录不是只读，并且当前账号有写权限。\n" +
+          "3. 可先改为新文件名再重试。\n\n" +
+          `原始错误：${raw}`,
+      };
+    }
+
+    if (
+      raw.includes("请先拖拽文件夹") ||
+      raw.includes("未绑定有效目录") ||
+      raw.includes("workspace_dir")
+    ) {
+      return {
+        short: "未选择工作目录",
+        detail:
+          "调用失败：还没有可操作的工作目录。\n\n" +
+          "建议：\n" +
+          "1. 在左侧“文件”区域点击“切换”，选择项目目录。\n" +
+          "2. 再次发送你的编辑指令。",
+      };
+    }
+
+    return {
+      short: "调用失败",
+      detail: `调用失败：${raw}`,
+    };
+  };
+
   const handleSend = async () => {
     if (!bridge) {
       setError("当前运行环境不是 Electron，无法与本地 Agent 通信。");
@@ -613,6 +727,7 @@ export default function App() {
       { role: "user", content: text },
     ];
     const taskPayload = getTaskPayload(selectedTask, text);
+    const useWorkspaceMode = selectedTask === "qa" && Boolean(rootDir);
     const historyId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     pushTaskHistory({
       id: historyId,
@@ -635,21 +750,26 @@ export default function App() {
         typeof bridge.subscribeAgentChatEvent === "function";
 
       if (!supportsStream) {
-        const response = (await (
-          typeof (bridge as any).runAgentTask === "function"
+        const response = (await (useWorkspaceMode
+          ? bridge.chatWithAgent(text, {
+              history: historyForAgent,
+              workspace_mode: true,
+              workspace_dir: rootDir,
+            })
+          : typeof (bridge as any).runAgentTask === "function"
             ? (bridge as any).runAgentTask(selectedTask, taskPayload)
             : bridge.chatWithAgent(text, {
                 history: historyForAgent,
                 task_type: selectedTask,
                 task_payload: taskPayload,
-              })
-        )) as AgentChatResponse;
+              }))) as AgentChatResponse;
         if (!response.ok) {
+          const friendly = buildFriendlyError(response.error);
           setMessages((prev) => [
             ...prev,
-            { role: "agent", content: `调用失败：${response.error ?? "未知错误"}` },
+            { role: "agent", content: friendly.detail },
           ]);
-          updateTaskHistory(historyId, { status: "failed", error: response.error ?? "未知错误" });
+          updateTaskHistory(historyId, { status: "failed", error: friendly.short });
           setChatLoading(false);
           return;
         }
@@ -696,10 +816,11 @@ export default function App() {
 
         if (event.type === "error") {
           stopTypewriter();
-          const errText = `调用失败：${event.error || "未知错误"}`;
+          const friendly = buildFriendlyError(event.error || "未知错误");
+          const errText = friendly.detail;
           replaceLastAgentMessage(streamedText ? `${streamedText}\n\n${errText}` : errText);
           updateLastAgentMessageStatus("");
-          updateTaskHistory(historyId, { status: "failed", error: event.error || "未知错误" });
+          updateTaskHistory(historyId, { status: "failed", error: friendly.short });
           stopListening();
           setChatLoading(false);
           return;
@@ -709,9 +830,10 @@ export default function App() {
 
         const response = event.response as AgentChatResponse;
         if (!response.ok) {
-          replaceLastAgentMessage(`调用失败：${response.error ?? "未知错误"}`);
+          const friendly = buildFriendlyError(response.error ?? "未知错误");
+          replaceLastAgentMessage(friendly.detail);
           updateLastAgentMessageStatus("");
-          updateTaskHistory(historyId, { status: "failed", error: response.error ?? "未知错误" });
+          updateTaskHistory(historyId, { status: "failed", error: friendly.short });
           stopListening();
           setChatLoading(false);
           return;
@@ -733,26 +855,33 @@ export default function App() {
       });
 
       try {
-        const started = await (
-          typeof (bridge as any).startAgentTaskStream === "function"
+        const started = await (useWorkspaceMode
+          ? bridge.startAgentChatStream(text, {
+              history: historyForAgent,
+              workspace_mode: true,
+              workspace_dir: rootDir,
+            })
+          : typeof (bridge as any).startAgentTaskStream === "function"
             ? (bridge as any).startAgentTaskStream(selectedTask, taskPayload)
             : bridge.startAgentChatStream(text, {
                 history: historyForAgent,
                 task_type: selectedTask,
                 task_payload: taskPayload,
-              })
-        );
+              }));
         startedChatId = started.chatId;
-        updateLastAgentMessageStatus(`正在执行任务: ${selectedTask}...`);
+        updateLastAgentMessageStatus(
+          useWorkspaceMode ? "正在执行目录编辑..." : `正在执行任务: ${selectedTask}...`
+        );
       } catch (startErr) {
         stopListening();
         throw startErr;
       }
     } catch (err) {
-      const errText = `调用异常：${err instanceof Error ? err.message : String(err)}`;
+      const friendly = buildFriendlyError(err instanceof Error ? err.message : String(err));
+      const errText = friendly.detail;
       updateTaskHistory(historyId, {
         status: "failed",
-        error: err instanceof Error ? err.message : String(err),
+        error: friendly.short,
       });
       setMessages((prev) => {
         const last = prev[prev.length - 1];
@@ -779,7 +908,12 @@ export default function App() {
   const handlePreviewFile = async (filePath: string) => {
     if (!bridge) return;
     const lower = filePath.toLowerCase();
-    const isTemplate = lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".docx");
+    const isTemplate =
+      lower.endsWith(".xlsx") ||
+      lower.endsWith(".xls") ||
+      lower.endsWith(".docx") ||
+      lower.endsWith(".doc") ||
+      lower.endsWith(".pdf");
     try {
       if (isTemplate) {
         const snapshot = await bridge.getPreview(filePath);
@@ -840,11 +974,16 @@ export default function App() {
     <div className="app-layout" ref={appRef}>
       <aside className="sidebar" style={{ flex: `0 0 ${sidebarWidthPx}px` }}>
         <Space direction="vertical" size="small" className="sidebar-header">
-          <Title level={4}>任务工作区</Title>
-          <Paragraph>集中处理报销问答与任务执行，右侧实时预览文档。</Paragraph>
-          <Button onClick={toggleMode} size="small">
-            {mode === "dark" ? "切换浅色" : "切换深色"}
-          </Button>
+          <Title level={4}>功能面板</Title>
+          <Paragraph>集中处理任务、查看输出并实时预览文件。</Paragraph>
+          <Space size="small" wrap>
+            <Button onClick={toggleMode} size="small">
+              {mode === "dark" ? "切换浅色" : "切换深色"}
+            </Button>
+            <Button onClick={clearChatMessages} size="small" disabled={chatLoading}>
+              清空对话
+            </Button>
+          </Space>
         </Space>
 
         <Card size="small" className="status-block file-tree-card">
@@ -874,7 +1013,7 @@ export default function App() {
         {taskSummary && (
           <Card size="small" className="status-block task-result-block">
             <Text strong>最近任务结果:</Text>
-            <Paragraph className="task-type-label">{taskSummary.taskType}</Paragraph>
+            <Paragraph className="task-type-label">{TASK_META[taskSummary.taskType].label}</Paragraph>
             {getTaskOutputPaths(taskSummary.taskType, taskSummary.result).length > 0 ? (
               <Space direction="vertical" size="small" className="task-output-list">
                 {getTaskOutputPaths(taskSummary.taskType, taskSummary.result).map((outputPath, index) => (
@@ -891,6 +1030,38 @@ export default function App() {
             )}
           </Card>
         )}
+
+        <Card size="small" className="status-block task-history-block">
+          <div className="task-history-header">
+            <Text strong>任务历史</Text>
+            <Button
+              size="small"
+              className="task-clear-btn"
+              onClick={clearTaskHistory}
+              disabled={taskHistory.length === 0}
+            >
+              清空
+            </Button>
+          </div>
+          <div className="task-history-list">
+            {taskHistory.length === 0 ? (
+              <Text className="task-output-empty">暂无任务记录</Text>
+            ) : (
+              taskHistory.map((item) => (
+                <div className="task-history-item" key={item.id}>
+                  <div className="task-history-top">
+                    <span className="task-history-type">{TASK_META[item.taskType].label}</span>
+                    <span className={`task-history-status ${item.status}`}>
+                      {item.status === "running" ? "运行中" : item.status === "success" ? "成功" : "失败"}
+                    </span>
+                  </div>
+                  <div className="task-history-input">{item.inputText || "(空输入)"}</div>
+                  {item.error ? <div className="task-history-error">{item.error}</div> : null}
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
         {error && <Alert type="error" message={`错误: ${error}`} />}
 
         <div
@@ -975,10 +1146,10 @@ export default function App() {
                   onChange={(value) => setSelectedTask(value as TaskType)}
                   disabled={chatLoading || !bridgeReady}
                   options={[
-                    { value: "qa", label: "报销问答" },
-                    { value: "reimburse", label: "单次报销" },
-                    { value: "final_account", label: "年度决算" },
-                    { value: "budget", label: "预算生成" },
+                    { value: "qa", label: TASK_META.qa.label },
+                    { value: "reimburse", label: TASK_META.reimburse.label },
+                    { value: "final_account", label: TASK_META.final_account.label },
+                    { value: "budget", label: TASK_META.budget.label },
                   ]}
                 />
                 <Button onClick={() => setInputText(getTaskDemoPrompt(selectedTask))} disabled={chatLoading || !bridgeReady}>
@@ -1022,7 +1193,7 @@ export default function App() {
                   value={inputText}
                   onChange={(event) => setInputText(event.target.value)}
                   onPressEnter={() => void handleSend()}
-                  placeholder={`输入${selectedTask === "qa" ? "问题" : "任务说明"}，当前任务：${selectedTask}`}
+                  placeholder={`输入${selectedTask === "qa" ? "问题" : "任务说明"}，当前任务：${TASK_META[selectedTask].label}`}
                   disabled={!bridgeReady || chatLoading}
                 />
                 <Button onClick={() => void handleSend()} disabled={!bridgeReady || chatLoading} type="primary">
