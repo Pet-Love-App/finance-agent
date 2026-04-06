@@ -198,6 +198,11 @@ body[data-theme="dark"] .pet-chat-badge.warn {
   white-space: nowrap;
 }
 
+.pet-chat-settings-btn {
+  -webkit-app-region: no-drag;
+  white-space: nowrap;
+}
+
 .pet-chat-dir {
   color: var(--text-muted);
   font-size: 11px;

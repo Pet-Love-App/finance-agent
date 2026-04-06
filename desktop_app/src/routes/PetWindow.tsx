@@ -40,7 +40,7 @@ function normalizeDroppedPath(input: string): string {
   return "";
 }
 
-function extractDropPath(event: DragEvent<HTMLDivElement>): string {
+function extractDropPath(event: DragEvent<HTMLElement>): string {
   const dataTransfer = event.dataTransfer;
   if (!dataTransfer) return "";
 

@@ -21,6 +21,14 @@ type ChatSessionsState = {
   sessions: ChatSessionMeta[];
 };
 
+type LlmProvider = "openai" | "glm" | "deepseek" | "qwen" | "anthropic" | "custom";
+type LlmConfig = {
+  provider: LlmProvider;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+};
+
 const api = {
   getWorkspaceDir: async (): Promise<string | null> => ipcRenderer.invoke("pet:getWorkspaceDir"),
   chat: async (message: string, history: ChatMessage[]): Promise<{ ok: boolean; reply?: string; error?: string }> =>
@@ -47,6 +55,9 @@ const api = {
     sessionId: string
   ): Promise<{ ok: boolean; activeSessionId?: string; history?: unknown; error?: string }> =>
     ipcRenderer.invoke("chat:sessions:delete", sessionId),
+  getLlmConfig: async (): Promise<LlmConfig> => ipcRenderer.invoke("llm:config:get"),
+  setLlmConfig: async (config: Partial<LlmConfig>): Promise<{ ok: boolean; config: LlmConfig }> =>
+    ipcRenderer.invoke("llm:config:set", config),
   openMainWindow: async (): Promise<void> => ipcRenderer.invoke("pet:openMain"),
   closePetChat: async (): Promise<void> => ipcRenderer.invoke("pet:closeChat"),
   pickWorkspaceDir: async (): Promise<{ ok: boolean; dir?: string; message?: string }> =>
@@ -70,6 +81,11 @@ const api = {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: ChatSessionsState) => handler(payload);
     ipcRenderer.on("chat:sessions:update", wrapped);
     return () => ipcRenderer.removeListener("chat:sessions:update", wrapped);
+  },
+  subscribeLlmConfig: (handler: (config: LlmConfig) => void): (() => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: LlmConfig) => handler(payload);
+    ipcRenderer.on("llm:config:updated", wrapped);
+    return () => ipcRenderer.removeListener("llm:config:updated", wrapped);
   },
 };
 

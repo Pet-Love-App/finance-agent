@@ -1,156 +1,213 @@
-# Electron 模板实时预览（MVP）
+<div align="center">
 
-## 功能
-- 选择 `xlsx/xls/docx` 模板文件。
-- 实时监听文件保存并自动刷新预览。
-- Excel 以表格预览，Word 以文本段落预览。
+# 财务报销 Agent
 
-## 运行
+一个面向本地桌面场景的智能报销辅助系统，集成 `LangGraph` 工作流、文档解析、规则问答、知识库检索、模板预览和安全沙箱能力。
+
+[English](./README.en.md) | 简体中文
+
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-Desktop_App-47848F?logo=electron&logoColor=white)
+![React](https://img.shields.io/badge/React-18%2B-61DAFB?logo=react&logoColor=black)
+![LangGraph](https://img.shields.io/badge/LangGraph-Agent_Workflow-121212)
+![Platform](https://img.shields.io/badge/Platform-Windows-blue)
+
+</div>
+
+## 快速链接
+
+- [贡献指南](./CONTRIBUTING.md)
+- [变更记录](./CHANGELOG.md)
+- [英文文档](./README.en.md)
+
+## 目录
+
+- [项目亮点](#项目亮点)
+- [截图预览](#截图预览)
+- [适用场景](#适用场景)
+- [技术架构](#技术架构)
+- [快速开始](#快速开始)
+- [配置说明](#配置说明)
+- [项目结构](#项目结构)
+- [FAQ](#faq)
+- [测试](#测试)
+- [贡献指南](#贡献指南)
+- [路线图](#路线图)
+- [许可证](#许可证)
+
+## 项目亮点
+
+- `桌面端交互`：基于 `Electron + React + Vite`，包含桌面主面板、模板预览和桥接层。
+- `流程化 Agent`：基于 `Python + LangGraph` 编排问答、报销、预算、决算等任务流。
+- `本地优先`：知识库、数据库、导出结果和审计日志都落在本地目录，便于追踪与维护。
+- `多格式解析`：支持 `Word / Excel / PDF / 图片 / Markdown / HTML / PPT` 等文档输入。
+- `模型可选接入`：既可仅使用本地规则，也可接入兼容 OpenAI 的模型服务。
+- `安全沙箱`：支持代码扫描、隔离执行与审计留痕。
+
+## 截图预览
+
+> 当前仓库还未提交正式产品截图。你可以将截图放到 `docs/images/` 目录，并替换下方占位说明。
+
+| 模块 | 说明 | 建议文件名 |
+| --- | --- | --- |
+| 主面板 | 展示桌面端首页、功能入口、任务状态 | `docs/images/dashboard.png` |
+| 模板预览 | 展示 `docx/xlsx` 的实时预览界面 | `docs/images/preview.png` |
+| 桌宠交互 | 展示桌宠悬浮窗、气泡消息或拖拽入口 | `docs/images/pet.png` |
+| 问答或审计结果 | 展示规则问答、审计报告或生成结果 | `docs/images/qa-or-report.png` |
+
+如果后续你补了图片，可以直接改成 GitHub 常见展示方式，例如：
+
+```md
+![Dashboard](docs/images/dashboard.png)
+![Preview](docs/images/preview.png)
+```
+
+## 适用场景
+
+- `报销规则问答`：回答报销制度、材料要求和流程问题。
+- `单次报销处理`：扫描材料、提取结构化信息、执行规则校验并生成结果。
+- `年度决算与预算`：聚合历史记录，输出预算表、决算表和分析内容。
+- `模板文件预览`：对 `xlsx/xls/docx` 模板进行本地预览和自动刷新。
+- `安全代码执行`：在受限环境中完成扫描、执行与审计。
+
+## 技术架构
+
+### 技术栈
+
+**后端**
+
+- `Python`
+- `LangGraph`
+- `pandas`
+- `jsonschema`
+- `openpyxl`
+- `python-docx`
+- `python-pptx`
+- `PyMuPDF`
+
+**桌面端**
+
+- `Electron`
+- `React`
+- `TypeScript`
+- `Vite`
+- `Ant Design`
+
+### 核心流程
+
+```text
+输入数据
+  -> Data_Extraction
+  -> Category_Alignment
+  -> Consistency_Check
+  -> Compliance_Audit
+  -> Report_Generator
+  -> JSON / Markdown 报告
+```
+
+### 模块分层
+
+```text
+desktop_app/          Electron 桌面端与预览界面
+agent/                Agent 核心能力、图编排、工具与子模块
+data/                 本地数据库、知识库、审计日志、模板数据
+docs/                 示例文档、设计资料和输出样例
+tests/                自动化测试
+```
+
+## 快速开始
+
+### 1. 克隆项目
+
+```bash
+git clone <your-repo-url>
+cd agent
+```
+
+### 2. 安装后端依赖
+
+建议使用 `Python 3.10+`。
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 3. 启动桌面端
+
+建议使用 `Node.js 18+`。
+
 ```bash
 cd desktop_app
 npm install
 npm run dev
 ```
 
-## Agent 自由问答（可选）
-默认可使用内置规则问答和审计触发；若要启用自由问答（LLM），请在启动 Electron 前配置环境变量：
+### 4. 运行后端示例
+
+```bash
+python run_v2.py
+```
+
+也可以运行最小示例流程：
+
+```bash
+python agent.py
+```
+
+## 配置说明
+
+### LLM 自由问答
+
+默认情况下，系统可使用本地规则回复；如果配置了模型环境变量，则普通对话可切换为自由问答模式。
 
 ```bash
 # PowerShell 示例
 $env:AGENT_LLM_API_KEY="你的Key"
 $env:AGENT_LLM_MODEL="gpt-4o-mini"
-# 可选，默认 https://api.openai.com/v1
 $env:AGENT_LLM_BASE_URL="https://api.openai.com/v1"
-# 可选，默认 60 秒
 $env:AGENT_LLM_TIMEOUT="60"
 ```
 
 说明：
-- 未设置 `AGENT_LLM_API_KEY` 时，系统继续走本地规则回复，不会调用云端模型。
-- 设置后，普通对话会进入 LLM 自由问答；`sample/示例/demo` 和传入审计 payload 仍优先走审计流程。
 
-### 接入 Paratera 云端模型
-你提供的平台地址可直接接入（OpenAI 兼容接口）：
+- 未设置 `AGENT_LLM_API_KEY` 时，系统不会调用云端模型。
+- `AGENT_LLM_BASE_URL` 与 `AGENT_LLM_API_URL` 均可使用，代码优先读取 `BASE_URL`。
+- 若地址未带 `/v1`，系统会自动补齐再调用接口。
+
+### 接入 Paratera
 
 ```bash
-# PowerShell 示例（推荐仅在当前会话临时设置）
 $env:AGENT_LLM_API_KEY="<你的真实Key>"
 $env:AGENT_LLM_API_URL="https://llmapi.paratera.com"
 $env:AGENT_LLM_MODEL="<平台可用模型ID>"
 ```
 
-说明：
-- `AGENT_LLM_API_URL` 与 `AGENT_LLM_BASE_URL` 均可使用，代码会优先读取 `BASE_URL`，否则读取 `API_URL`。
-- 若地址未带 `/v1`，系统会自动补齐为 `/v1` 后再调用 `chat/completions`。
-- 请不要把 Key 写入代码仓库，建议放入本地环境变量或未提交的 `.env` 文件。
-- API Key 具备完整账户权限，请定期轮换并避免在日志/截图中泄露。
-
-### 使用 LM Studio（本地模型）
-LM Studio 默认提供 OpenAI 兼容接口，可直接接入：
+### 接入 LM Studio
 
 ```bash
-# PowerShell 示例
 $env:AGENT_LLM_BASE_URL="http://127.0.0.1:1234/v1"
 $env:AGENT_LLM_MODEL="google/gemma-3-4b"
-# 本地地址可不设置 Key；若你在 LM Studio 开启了鉴权，再设置即可
-# $env:AGENT_LLM_API_KEY="lm-studio"
 ```
 
-也可以放到 `desktop_app/.env`（推荐）：
+也可以写入 `desktop_app/.env`：
 
 ```bash
 AGENT_LLM_BASE_URL=http://127.0.0.1:1234/v1
 AGENT_LLM_MODEL=google/gemma-3-4b
 ```
 
-注意：
-- 请先在 LM Studio 中启动 Local Server（OpenAI Compatible）。
-- 若返回模型不存在，请把 `AGENT_LLM_MODEL` 改为 LM Studio 实际显示的 model id。
+### 知识库配置
 
-## Agent 后端架构
-
-### 技术栈
-```
-- LangGraph (>=0.2.0)      # Agent 工作流框架
-- Pandas (>=2.0.0)         # 数据处理
-- jsonschema (>=4.0.0)     # JSON 验证
-- python-docx/pptx/openpyxl # Office 文件支持
-```
-
-### 核心结构
-```
-agent/                          # 核心 Agent 模块
-├── state.py                    # LangGraph 状态定义
-├── schemas.py                  # JSON Schema + 类目同义词映射
-├── graph_builder.py            # LangGraph 流程图构建
-├── nodes.py                    # 5 个处理节点的实现
-├── utils.py                    # 通用工具函数
-├── sample_data.py              # 示例测试数据
-│
-├── kb/                         # 知识库模块
-│   ├── retriever.py           # 知识库检索（文本相似度）
-│   └── ingest.py              # 知识库数据导入
-
-agent.py                        # 主入口脚本
-
-data/kb/
-└── reimbursement_kb.json      # 知识库存储文件
-```
-
-### 工作流程（5 阶段管道）
-
-```
-输入数据 → Data_Extraction → Category_Alignment → Consistency_Check 
-       → Compliance_Audit → Report_Generator → JSON/Markdown 报告
-```
-
-#### 各节点职责
-
-| 节点 | 功能 | 输出 |
-|------|------|------|
-| **Data_Extraction** | 加载、验证、标准化预算/决算数据 | DataFrame + 规范化数据 |
-| **Category_Alignment** | 用模糊匹配把决算支出映射到预算类目 | matched_category 字段 |
-| **Consistency_Check** | 检查超支/无法匹配的项目 | discrepancies + suggestions |
-| **Compliance_Audit** | 餐饮/会议类特殊审计规则 | 高风险项标记 |
-| **Report_Generator** | 生成 JSON 和 Markdown 报告 | 完整审计报告 |
-
-### 状态流转（AgentState）
-
-```python
-AgentState {
-  # 输入
-  budget_source → actual_source
-  
-  # 中间处理
-  budget_data, actual_data      # 规范化列表
-  budget_df, actual_df           # Pandas 数据框
-  
-  # 输出
-  discrepancies → [{type, risk, message, details}]
-  suggestions → [建议文本]
-  extraction_warnings → [提取警告]
-  report → {report_json, report_markdown}
-}
-```
-
-### 核心特点
-
-- ✅ **流程化** - LangGraph 声明式管道
-- ✅ **有状态** - TypedDict 状态贯穿全程
-- ✅ **可验证** - 严格的 JSON Schema 校验
-- ✅ **智能匹配** - 支持类目别名和模糊匹配
-- ✅ **双格式输出** - JSON + Markdown 报告
-- ✅ **可扩展** - 知识库支持自定义规则
-
-## 知识库（RAG）
-若你已将报销制度文档放入 `docs/reimbursement`，可先构建本地知识库索引：
+如果你已经将报销制度文档放入 `docs/reimbursement`，可先构建本地知识库：
 
 ```bash
-# 在项目根目录执行
 python -m agent.kb.ingest --source docs/reimbursement --output data/kb/reimbursement_kb.json
 ```
 
-然后在 `desktop_app/.env` 增加（可选，默认已指向该路径）：
+然后在 `desktop_app/.env` 中配置：
 
 ```bash
 AGENT_KB_PATH=../data/kb/reimbursement_kb.json
@@ -158,12 +215,9 @@ AGENT_KB_TOP_K=4
 AGENT_KB_MAX_CHARS=1800
 ```
 
-说明：
-- 聊天时会先检索知识库片段，再交给 LLM 生成答案。
-- 文档更新后，重新执行一次 `ingest` 命令即可刷新知识库。
+### 图策略参数
 
-## 图策略参数（Graph Policy）
-可在任务 `payload` 中通过 `graph_policy` 控制各 SubGraph 的 fallback 行为：
+可在任务 `payload` 中通过 `graph_policy` 控制各 SubGraph 的行为：
 
 ```json
 {
@@ -178,59 +232,102 @@ AGENT_KB_MAX_CHARS=1800
 }
 ```
 
-说明：
-- 未提供 `graph_policy` 时使用默认策略，兼容旧字段（如 `stop_on_rule_violation`、`kb_top_k`）。
-- 建议在桌面端调度层统一注入策略，避免前端页面重复硬编码。
+可选环境变量：
 
-可通过环境变量调整默认策略（由调度器自动注入）：
-- `AGENT_GRAPH_REIMBURSE_STOP_ON_RULE_VIOLATION`（默认 `false`）
-- `AGENT_GRAPH_QA_ALLOW_EMPTY_QUERY`（默认 `false`）
-- `AGENT_GRAPH_QA_KB_TOP_K`（默认 `4`）
-- `AGENT_GRAPH_QA_KB_SCORE_THRESHOLD`（默认 `0.0`）
-- `AGENT_GRAPH_FINAL_GENERATE_WHEN_EMPTY`（默认 `true`）
-- `AGENT_GRAPH_BUDGET_SKIP_CALCULATE_WHEN_EMPTY`（默认 `true`）
+- `AGENT_GRAPH_REIMBURSE_STOP_ON_RULE_VIOLATION`
+- `AGENT_GRAPH_QA_ALLOW_EMPTY_QUERY`
+- `AGENT_GRAPH_QA_KB_TOP_K`
+- `AGENT_GRAPH_QA_KB_SCORE_THRESHOLD`
+- `AGENT_GRAPH_FINAL_GENERATE_WHEN_EMPTY`
+- `AGENT_GRAPH_BUDGET_SKIP_CALCULATE_WHEN_EMPTY`
 
-## Agent 审计配置
-可通过环境变量做“策略参数化”，避免把规则阈值硬编码在代码里：
+### 审计阈值配置
 
 ```bash
-# 单类目超支阈值（默认 0.10）
 AGENT_CATEGORY_OVERRUN_THRESHOLD=0.10
-
-# 高风险标签（默认 High Risk）
 AGENT_HIGH_RISK_LABEL=High Risk
-
-# 特殊审计类目关键字，英文逗号分隔（默认 餐饮,会议）
 AGENT_SPECIAL_EXPENSE_KEYWORDS=餐饮,会议
 ```
 
-## 代码沙箱（Code Sandbox）
-已新增 `agent/sandbox` 安全执行子系统，支持：
-- Docker 容器隔离执行（默认无网络、只读根文件系统、capabilities 降权）。
-- 静态安全扫描 + 代码哈希签名 + 运行时风险检测。
-- 审计日志（`data/audit/sandbox_audit.jsonl`）保留策略（180 天）。
+## 项目结构
 
-任务调度调用方式：
-- `payload.task_type = sandbox_exec`
-- `payload.task_payload` 示例字段：
-  - `user_id`, `language`, `code`
-  - `cpu_cores`, `memory_mb`, `disk_mb`, `network_kbps`, `timeout_seconds`
-  - `seccomp_profile`, `apparmor_profile`, `syscall_whitelist`
+```text
+agent/
+├── core/             调度、事件总线、窗口管理
+├── graphs/           主图与各类 SubGraph
+├── kb/               本地知识库构建与检索
+├── parser/           多格式文档解析能力
+├── sandbox/          代码沙箱与安全策略
+└── tools/            面向工作流的工具封装
 
-CLI 示例：
-```bash
-python -m agent.sandbox.cli scan --code-file demo.py
-python -m agent.sandbox.cli exec --user-id u1 --language python --code-file demo.py
+desktop_app/
+├── electron/         Electron 主进程与 preload
+├── src/              React 页面与组件
+└── agent_bridge/     桌面端与 Python Agent 桥接层
+
+data/
+├── audit/            审计日志
+├── db/               本地数据库
+├── kb/               本地知识库文件
+└── templates/        示例模板与输出依赖
 ```
 
-## 目录
-- `electron/main.ts`：Electron 主进程、IPC、文件监听。
-- `electron/preload.ts`：安全桥接 API。
-- `electron/templateParser.ts`：模板解析逻辑。
-- `src/App.tsx`：交互入口与状态管理。
-- `src/components/PreviewPanel.tsx`：预览区渲染。
+## FAQ
 
-## 可扩展建议
-- 增加 PDF/image 附件预览组件。
-- 将 `parseTemplate` 迁移到 worker_threads 提升大文件性能。
-- 为预览数据增加 JSON Schema 版本控制。
+### 1. 不配置 LLM 也能运行吗？
+
+可以。未设置 `AGENT_LLM_API_KEY` 时，系统仍可使用本地规则问答和既有流程能力，不会调用云端模型。
+
+### 2. 可以接本地模型吗？
+
+可以。项目支持兼容 OpenAI 协议的本地服务，例如 `LM Studio`。
+
+### 3. 知识库文档更新后需要做什么？
+
+重新执行一次 `python -m agent.kb.ingest ...` 构建命令即可刷新本地知识库。
+
+### 4. 为什么 README 里没有产品截图？
+
+当前仓库里还没有正式截图资源。建议将截图放入 `docs/images/` 后，在“截图预览”部分替换占位内容。
+
+### 5. 当前是否已有开源许可证？
+
+仓库目前未看到明确的 `LICENSE` 文件。如果准备公开发布，建议补充许可证文件和说明。
+
+## 测试
+
+项目当前测试以 `unittest` 为主，可在根目录执行：
+
+```bash
+python -m unittest discover -s tests
+```
+
+## 贡献指南
+
+欢迎通过 `Issue` 和 `Pull Request` 参与项目改进。
+
+建议贡献流程：
+
+1. Fork 仓库并创建功能分支。
+2. 在本地完成开发与必要测试。
+3. 更新相关文档，确保配置说明和行为一致。
+4. 提交 PR，并说明变更背景、实现方式和验证结果。
+
+提交前建议检查：
+
+- 代码是否与现有目录职责一致。
+- 新增配置是否已写入 README。
+- 测试是否能覆盖关键变更。
+- 敏感信息是否已从代码和提交中移除。
+
+## 路线图
+
+- 增加更多附件类型的可视化预览能力
+- 优化大文件解析与后台处理性能
+- 补充更完整的模板、规则和工作流配置能力
+- 完善桌面端打包与分发流程
+- 补充正式产品截图、演示动图与发布说明
+
+## 许可证
+
+当前仓库中未看到明确的 `LICENSE` 文件；如果计划开源，建议补充许可证声明。

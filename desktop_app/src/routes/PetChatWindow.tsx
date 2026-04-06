@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { Button, Input, Select, Space, Typography } from "antd";
+import { Button, Input, Modal, Select, Space, Typography, message as antdMessage } from "antd";
 
 type ChatMessage = { role: "user" | "agent"; content: string };
 type ChatSessionMeta = {
@@ -9,6 +9,51 @@ type ChatSessionMeta = {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+};
+type LlmProvider = "openai" | "glm" | "deepseek" | "qwen" | "anthropic" | "custom";
+type LlmConfig = {
+  provider: LlmProvider;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+};
+
+const LLM_PROVIDER_PRESETS: Record<
+  Exclude<LlmProvider, "custom">,
+  { label: string; baseUrl: string; model: string }
+> = {
+  openai: {
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o-mini",
+  },
+  glm: {
+    label: "GLM (智谱)",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "glm-4-flash",
+  },
+  deepseek: {
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+  },
+  qwen: {
+    label: "Qwen (阿里云百炼)",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model: "qwen-plus",
+  },
+  anthropic: {
+    label: "Anthropic",
+    baseUrl: "https://api.anthropic.com/v1",
+    model: "claude-3-5-sonnet-latest",
+  },
+};
+
+const DEFAULT_LLM_CONFIG: LlmConfig = {
+  provider: "openai",
+  apiKey: "",
+  baseUrl: LLM_PROVIDER_PRESETS.openai.baseUrl,
+  model: LLM_PROVIDER_PRESETS.openai.model,
 };
 const DEFAULT_CHAT_MESSAGE: ChatMessage = {
   role: "agent",
@@ -28,6 +73,10 @@ export function PetChatWindow() {
   const [input, setInput] = useState("");
   const [workspaceDir, setWorkspaceDir] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
+  const [llmConfig, setLlmConfig] = useState<LlmConfig>(DEFAULT_LLM_CONFIG);
+  const [llmConfigOpen, setLlmConfigOpen] = useState(false);
+  const [llmConfigLoading, setLlmConfigLoading] = useState(false);
+  const [llmConfigSaving, setLlmConfigSaving] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const lastSyncedMessagesRef = useRef<string>("");
 
@@ -44,6 +93,44 @@ export function PetChatWindow() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const api = window.petChatApi;
+    if (!api || typeof api.getLlmConfig !== "function") {
+      return;
+    }
+
+    let unsubscribe: (() => void) | null = null;
+
+    const hydrateConfig = async () => {
+      setLlmConfigLoading(true);
+      try {
+        const config = await api.getLlmConfig();
+        if (config && typeof config === "object") {
+          const parsed = config as LlmConfig;
+          setLlmConfig({
+            provider: parsed.provider ?? "openai",
+            apiKey: parsed.apiKey ?? "",
+            baseUrl: parsed.baseUrl ?? "",
+            model: parsed.model ?? "",
+          });
+        }
+      } finally {
+        setLlmConfigLoading(false);
+      }
+    };
+
+    if (typeof api.subscribeLlmConfig === "function") {
+      unsubscribe = api.subscribeLlmConfig((config: LlmConfig) => {
+        setLlmConfig(config);
+      });
+    }
+
+    void hydrateConfig();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
@@ -287,6 +374,48 @@ export function PetChatWindow() {
     await sendMessage(text);
   };
 
+  const onProviderChange = (provider: LlmProvider) => {
+    setLlmConfig((prev) => {
+      if (provider === "custom") {
+        return { ...prev, provider };
+      }
+      const preset = LLM_PROVIDER_PRESETS[provider];
+      return {
+        ...prev,
+        provider,
+        baseUrl: preset.baseUrl,
+        model: preset.model,
+      };
+    });
+  };
+
+  const onSaveLlmConfig = async () => {
+    const api = window.petChatApi;
+    if (!api || typeof api.setLlmConfig !== "function") return;
+    if (!llmConfig.baseUrl.trim()) {
+      antdMessage.error("Base URL 不能为空");
+      return;
+    }
+    if (!llmConfig.model.trim()) {
+      antdMessage.error("模型名不能为空");
+      return;
+    }
+
+    setLlmConfigSaving(true);
+    try {
+      const result = await api.setLlmConfig(llmConfig);
+      if (!result?.ok) {
+        antdMessage.error("保存失败");
+        return;
+      }
+      setLlmConfig(result.config);
+      setLlmConfigOpen(false);
+      antdMessage.success("模型配置已保存，后续对话将使用新配置");
+    } finally {
+      setLlmConfigSaving(false);
+    }
+  };
+
   const onCreateSession = async () => {
     if (chatLoading) return;
     if (!window.petChatApi || typeof window.petChatApi.createChatSession !== "function") return;
@@ -353,6 +482,14 @@ export function PetChatWindow() {
           </Button>
         </div>
         <div className="pet-chat-header-actions">
+          <Button
+            size="small"
+            onClick={() => setLlmConfigOpen(true)}
+            className="pet-chat-settings-btn"
+            loading={llmConfigLoading}
+          >
+            模型设置
+          </Button>
           <span className={`pet-chat-badge ${isBound ? "ready" : "warn"}`}>
             {isBound ? "已绑定" : "待绑定"}
           </span>
@@ -410,6 +547,67 @@ export function PetChatWindow() {
           </Button>
         </Space>
       </div>
+
+      <Modal
+        title="模型配置"
+        open={llmConfigOpen}
+        onCancel={() => setLlmConfigOpen(false)}
+        onOk={() => void onSaveLlmConfig()}
+        okText={llmConfigSaving ? "保存中..." : "保存"}
+        confirmLoading={llmConfigSaving}
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            支持 OpenAI、GLM、DeepSeek、Qwen、Anthropic，以及自定义兼容接口。
+          </Typography.Text>
+          <Typography.Text>提供商</Typography.Text>
+          <Select<LlmProvider>
+            value={llmConfig.provider}
+            onChange={onProviderChange}
+            options={[
+              { value: "openai", label: LLM_PROVIDER_PRESETS.openai.label },
+              { value: "glm", label: LLM_PROVIDER_PRESETS.glm.label },
+              { value: "deepseek", label: LLM_PROVIDER_PRESETS.deepseek.label },
+              { value: "qwen", label: LLM_PROVIDER_PRESETS.qwen.label },
+              { value: "anthropic", label: LLM_PROVIDER_PRESETS.anthropic.label },
+              { value: "custom", label: "自定义" },
+            ]}
+          />
+          <Typography.Text>API Key</Typography.Text>
+          <Input.Password
+            value={llmConfig.apiKey}
+            onChange={(event) =>
+              setLlmConfig((prev) => ({
+                ...prev,
+                apiKey: event.target.value,
+              }))
+            }
+            placeholder="输入你的 API Key（本地模型可留空）"
+          />
+          <Typography.Text>Base URL</Typography.Text>
+          <Input
+            value={llmConfig.baseUrl}
+            onChange={(event) =>
+              setLlmConfig((prev) => ({
+                ...prev,
+                baseUrl: event.target.value,
+              }))
+            }
+            placeholder="例如 https://api.openai.com/v1"
+          />
+          <Typography.Text>模型名</Typography.Text>
+          <Input
+            value={llmConfig.model}
+            onChange={(event) =>
+              setLlmConfig((prev) => ({
+                ...prev,
+                model: event.target.value,
+              }))
+            }
+            placeholder="例如 gpt-4o-mini"
+          />
+        </Space>
+      </Modal>
     </div>
   );
 }
