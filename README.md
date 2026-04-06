@@ -47,16 +47,12 @@
 
 ## 截图预览
 
-> 当前仓库还未提交正式产品截图。你可以将截图放到 `docs/images/` 目录，并替换下方占位说明。
-
 | 模块 | 说明 | 建议文件名 |
 | --- | --- | --- |
 | 主面板 | 展示桌面端首页、功能入口、任务状态 | `docs/images/dashboard.png` |
 | 模板预览 | 展示 `docx/xlsx` 的实时预览界面 | `docs/images/preview.png` |
 | 桌宠交互 | 展示桌宠悬浮窗、气泡消息或拖拽入口 | `docs/images/pet.png` |
 | 问答或审计结果 | 展示规则问答、审计报告或生成结果 | `docs/images/qa-or-report.png` |
-
-如果后续你补了图片，可以直接改成 GitHub 常见展示方式，例如：
 
 ```md
 ![Dashboard](docs/images/dashboard.png)
