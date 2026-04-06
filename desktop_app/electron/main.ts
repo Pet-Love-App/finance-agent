@@ -38,6 +38,142 @@ let petDragState: { startMouseX: number; startMouseY: number; startWindowX: numb
 
 const isDev = !app.isPackaged;
 const rendererDevServer = "http://localhost:5173";
+const LLM_CONFIG_FILE_NAME = "llm_config.json";
+
+type LlmProvider = "openai" | "glm" | "deepseek" | "qwen" | "anthropic" | "custom";
+type LlmConfig = {
+  provider: LlmProvider;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+};
+
+const LLM_PROVIDER_PRESETS: Record<Exclude<LlmProvider, "custom">, { baseUrl: string; model: string }> = {
+  openai: {
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o-mini",
+  },
+  glm: {
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "glm-4-flash",
+  },
+  deepseek: {
+    baseUrl: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+  },
+  qwen: {
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model: "qwen-plus",
+  },
+  anthropic: {
+    baseUrl: "https://api.anthropic.com/v1",
+    model: "claude-3-5-sonnet-latest",
+  },
+};
+
+function inferProviderFromBaseUrl(baseUrl: string): LlmProvider {
+  const lowered = baseUrl.toLowerCase();
+  if (lowered.includes("bigmodel.cn") || lowered.includes("zhipu")) return "glm";
+  if (lowered.includes("deepseek")) return "deepseek";
+  if (lowered.includes("dashscope") || lowered.includes("aliyuncs")) return "qwen";
+  if (lowered.includes("anthropic")) return "anthropic";
+  if (lowered.includes("openai")) return "openai";
+  return "custom";
+}
+
+function normalizeLlmBaseUrl(rawBaseUrl: string): string {
+  const trimmed = String(rawBaseUrl ?? "").trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  try {
+    const parsed = new URL(trimmed);
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    if (!pathname) {
+      parsed.pathname = "/v1";
+      return parsed.toString().replace(/\/+$/, "");
+    }
+    return `${parsed.origin}${pathname}`;
+  } catch {
+    return trimmed;
+  }
+}
+
+function buildDefaultLlmConfig(): LlmConfig {
+  const envBaseUrl = String(process.env.AGENT_LLM_BASE_URL ?? process.env.AGENT_LLM_API_URL ?? "").trim();
+  const normalizedEnvBaseUrl = normalizeLlmBaseUrl(envBaseUrl);
+  const provider = normalizedEnvBaseUrl ? inferProviderFromBaseUrl(normalizedEnvBaseUrl) : "openai";
+  const preset = provider === "custom" ? undefined : LLM_PROVIDER_PRESETS[provider];
+  return {
+    provider,
+    apiKey: String(process.env.AGENT_LLM_API_KEY ?? "").trim(),
+    baseUrl: normalizedEnvBaseUrl || preset?.baseUrl || LLM_PROVIDER_PRESETS.openai.baseUrl,
+    model: String(process.env.AGENT_LLM_MODEL ?? "").trim() || preset?.model || LLM_PROVIDER_PRESETS.openai.model,
+  };
+}
+
+function sanitizeLlmConfig(input: Partial<LlmConfig> | null | undefined): LlmConfig {
+  const fallback = buildDefaultLlmConfig();
+  const providerValue = String(input?.provider ?? fallback.provider).trim().toLowerCase();
+  const provider: LlmProvider =
+    providerValue === "openai" ||
+    providerValue === "glm" ||
+    providerValue === "deepseek" ||
+    providerValue === "qwen" ||
+    providerValue === "anthropic" ||
+    providerValue === "custom"
+      ? providerValue
+      : fallback.provider;
+
+  const preset = provider === "custom" ? undefined : LLM_PROVIDER_PRESETS[provider];
+  const normalizedBase = normalizeLlmBaseUrl(String(input?.baseUrl ?? "").trim());
+  const baseUrl = normalizedBase || preset?.baseUrl || fallback.baseUrl;
+  const model = String(input?.model ?? "").trim() || preset?.model || fallback.model;
+  const apiKey = String(input?.apiKey ?? "").trim();
+
+  return { provider, apiKey, baseUrl, model };
+}
+
+function llmConfigFilePath(): string {
+  return path.join(app.getPath("userData"), LLM_CONFIG_FILE_NAME);
+}
+
+function loadLlmConfigFromDisk(): LlmConfig {
+  const fallback = buildDefaultLlmConfig();
+  try {
+    const filePath = llmConfigFilePath();
+    if (!fs.existsSync(filePath)) {
+      return fallback;
+    }
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
+    return sanitizeLlmConfig(parsed);
+  } catch {
+    return fallback;
+  }
+}
+
+function saveLlmConfigToDisk(config: LlmConfig): void {
+  const filePath = llmConfigFilePath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(config, null, 2), "utf-8");
+}
+
+function buildChatEnv(baseEnv: NodeJS.ProcessEnv, config: LlmConfig): NodeJS.ProcessEnv {
+  const nextEnv: NodeJS.ProcessEnv = {
+    ...baseEnv,
+    AGENT_LLM_BASE_URL: config.baseUrl,
+    AGENT_LLM_MODEL: config.model,
+  };
+
+  if (config.apiKey) {
+    nextEnv.AGENT_LLM_API_KEY = config.apiKey;
+  } else {
+    delete nextEnv.AGENT_LLM_API_KEY;
+  }
+
+  return nextEnv;
+}
+
+let currentLlmConfig: LlmConfig = buildDefaultLlmConfig();
 
 function normalizeRendererRoute(route: string): string {
   const trimmed = route.trim();
@@ -209,11 +345,14 @@ function invokePythonChat(request: { message: string; payload?: unknown }): Prom
     const child = spawn(python, ["-X", "utf8", scriptPath], {
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
-      env: {
+      env: buildChatEnv(
+        {
         ...process.env,
         PYTHONUTF8: "1",
         PYTHONIOENCODING: "utf-8",
-      },
+        },
+        currentLlmConfig
+      ),
     });
 
     let stdout = "";
@@ -279,11 +418,14 @@ function invokePythonChatStream(
   const child = spawn(python, ["-X", "utf8", scriptPath], {
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
-    env: {
+    env: buildChatEnv(
+      {
       ...process.env,
       PYTHONUTF8: "1",
       PYTHONIOENCODING: "utf-8",
-    },
+      },
+      currentLlmConfig
+    ),
   });
 
   activeChatProcesses.set(chatId, child);
@@ -476,6 +618,15 @@ function sanitizeChatHistory(history: Array<{ role: string; content: string; sta
     content: String(item.content ?? ""),
     status: typeof item.status === "string" ? item.status : undefined,
   }));
+}
+
+function emitLlmConfigUpdated(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("llm:config:updated", currentLlmConfig);
+  }
+  if (petChatWindow && !petChatWindow.isDestroyed()) {
+    petChatWindow.webContents.send("llm:config:updated", currentLlmConfig);
+  }
 }
 
 function deriveSessionTitleFromHistory(history: SharedChatMessage[]): string {
@@ -923,6 +1074,18 @@ ipcMain.handle("chat:history:get", async () => {
   return getActiveChatSession()?.history ?? [];
 });
 
+ipcMain.handle("llm:config:get", async () => {
+  return currentLlmConfig;
+});
+
+ipcMain.handle("llm:config:set", async (_event, input: Partial<LlmConfig>) => {
+  const nextConfig = sanitizeLlmConfig(input);
+  currentLlmConfig = nextConfig;
+  saveLlmConfigToDisk(nextConfig);
+  emitLlmConfigUpdated();
+  return { ok: true, config: nextConfig };
+});
+
 ipcMain.handle(
   "chat:history:set",
   async (_event, history: Array<{ role: string; content: string; status?: string }>) => {
@@ -1180,6 +1343,7 @@ ipcMain.handle("pet:chat:stop", async (_event, chatId: string) => {
 });
 
 app.whenReady().then(() => {
+  currentLlmConfig = loadLlmConfigFromDisk();
   createMainWindow();
   createPetWindow();
 

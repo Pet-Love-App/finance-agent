@@ -21,7 +21,7 @@ export function MarkdownRenderer({ content }: Props) {
           );
         },
         code(props) {
-          const { children, className, ...rest } = props;
+          const { children, className, ref: _ref, ...rest } = props;
           const match = /language-(\w+)/.exec(className || "");
           const codeText = String(children ?? "").replace(/\n$/, "");
 

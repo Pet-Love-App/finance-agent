@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "sessions": {
+    "workspace:0a5f4c5dc7442de7": {
+      "updated_at": "2026-04-05T22:09:00.860729",
+      "short_term": [
+        {
+          "role": "user",
+          "content": "你好"
+        },
+        {
+          "role": "assistant",
+          "content": "你好，我已就绪。你可以直接提问报销规则，或选择任务类型后描述目标，我会给出可执行结果。"
+        }
+      ],
+      "long_term": [],
+      "rolling_summary": "",
+      "profile": {}
+    }
+  }
+}
