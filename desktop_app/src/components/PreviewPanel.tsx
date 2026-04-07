@@ -465,12 +465,15 @@ export function PreviewPanel({
             <SyntaxHighlighter
               language={codeLanguage}
               style={vscDarkPlus}
+              showLineNumbers
+              wrapLongLines
               customStyle={{
                 margin: 0,
                 background: "transparent",
                 padding: "16px",
+                color: "#e5e7eb",
                 fontSize: "12px",
-                lineHeight: "1.6",
+                lineHeight: "1.7",
               }}
             >
               {preview.content}

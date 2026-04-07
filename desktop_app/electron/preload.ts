@@ -87,12 +87,40 @@ type EditTraceSummary = {
   byOperation: Record<TraceOperation, number>;
 };
 
+type CompareFileEntry = {
+  path: string;
+  name: string;
+  ext: string;
+  size: number;
+  updatedAt: string;
+};
+
 const api = {
   openTemplate: async (): Promise<string | null> => ipcRenderer.invoke("template:open"),
   getPredefinedTemplate: async (type: string): Promise<string> => ipcRenderer.invoke("template:exportPredefined", type),
   saveAs: async (sourcePath: string): Promise<string | null> => ipcRenderer.invoke("template:saveAs", sourcePath),
   openLocalPath: async (targetPath: string): Promise<{ ok: boolean; message?: string }> =>
     ipcRenderer.invoke("template:openPath", targetPath),
+  openCompareWindow: async (): Promise<{ ok: boolean }> => ipcRenderer.invoke("compare:openWindow"),
+  getCompareBoundDir: async (): Promise<string | null> => ipcRenderer.invoke("compare:getBoundDir"),
+  setCompareBoundDir: async (targetDir: string): Promise<{ ok: boolean; dir?: string; error?: string }> =>
+    ipcRenderer.invoke("compare:setBoundDir", targetDir),
+  pickCompareBoundDir: async (): Promise<{ ok: boolean; dir?: string; message?: string; error?: string }> =>
+    ipcRenderer.invoke("compare:pickBoundDir"),
+  listCompareBoundFiles: async (): Promise<{
+    ok: boolean;
+    dir?: string;
+    files?: CompareFileEntry[];
+    error?: string;
+  }> => ipcRenderer.invoke("compare:listBoundFiles"),
+  pickCompareFile: async (
+    role: "final" | "budget"
+  ): Promise<{ ok: boolean; path?: string; message?: string; error?: string }> =>
+    ipcRenderer.invoke("compare:pickFile", { role }),
+  getComparePreview: async (
+    filePath: string
+  ): Promise<{ ok: boolean; preview?: TemplatePreview; error?: string }> =>
+    ipcRenderer.invoke("compare:previewTemplate", filePath),
   getProjectDir: async (): Promise<string> => ipcRenderer.invoke("template:getProjectDir"),
   pickProjectDir: async (): Promise<{ ok: boolean; dir?: string; message?: string }> =>
     ipcRenderer.invoke("template:pickDir"),

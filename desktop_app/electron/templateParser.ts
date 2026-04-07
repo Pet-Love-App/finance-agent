@@ -155,6 +155,63 @@ async function readDocx(filePath: string): Promise<{ textSections: string[]; htm
   };
 }
 
+function scoreReadableText(text: string): number {
+  if (!text) return 0;
+  const cjk = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
+  const asciiWord = (text.match(/[A-Za-z]/g) ?? []).length;
+  const digits = (text.match(/\d/g) ?? []).length;
+  const control = (text.match(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g) ?? []).length;
+  return cjk * 2 + asciiWord + digits - control * 4;
+}
+
+function toTextSectionsFromRaw(raw: string): string[] {
+  const normalized = String(raw ?? "")
+    .replace(/\u0000/g, " ")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+
+  const chunks = normalized
+    .split(/\n{1,}/g)
+    .map((item) => item.replace(/\s+/g, " ").trim())
+    .filter((item) => item.length >= 4);
+
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const item of chunks) {
+    const key = item.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+    if (deduped.length >= 260) break;
+  }
+  return deduped;
+}
+
+function readLegacyDoc(filePath: string): { textSections: string[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const buffer = fs.readFileSync(filePath);
+  const candidates = [buffer.toString("utf8"), buffer.toString("utf16le"), buffer.toString("latin1")];
+  let bestRaw = "";
+  let bestScore = -Infinity;
+
+  for (const candidate of candidates) {
+    const score = scoreReadableText(candidate);
+    if (score > bestScore) {
+      bestScore = score;
+      bestRaw = candidate;
+    }
+  }
+
+  const sections = toTextSectionsFromRaw(bestRaw);
+  if (sections.length === 0) {
+    warnings.push("`.doc` 为旧版 Word 二进制格式，未提取到可比对文本，建议另存为 `.docx`。");
+  } else {
+    warnings.push("`.doc` 已使用兼容模式提取文本，可能与原排版存在差异。");
+  }
+  return { textSections: sections, warnings };
+}
+
 export async function parseTemplate(filePath: string): Promise<TemplatePreview> {
   const fileType = extToType(filePath);
   const stat = fs.statSync(filePath);
@@ -186,7 +243,9 @@ export async function parseTemplate(filePath: string): Promise<TemplatePreview> 
   }
 
   if (fileType === "doc") {
-    warnings.push("`.doc` 为旧版 Word 二进制格式，预览可能不完整，建议另存为 `.docx`。");
+    const legacy = readLegacyDoc(filePath);
+    base.textSections = legacy.textSections;
+    base.warnings.push(...legacy.warnings);
     return base;
   }
 

@@ -1267,6 +1267,13 @@ export default function App() {
             <Button onClick={clearChatMessages} size="small" disabled={chatLoading}>
               清空对话
             </Button>
+            <Button
+              onClick={() => void bridge?.openCompareWindow?.()}
+              size="small"
+              disabled={!bridgeReady}
+            >
+              打开比对窗口
+            </Button>
           </Space>
         </Space>
 

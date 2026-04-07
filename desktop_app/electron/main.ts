@@ -19,6 +19,7 @@ dotenv.config({ path: path.join(process.cwd(), ".env") });
 let mainWindow: BrowserWindow | null = null;
 let petWindow: BrowserWindow | null = null;
 let petChatWindow: BrowserWindow | null = null;
+let compareWindow: BrowserWindow | null = null;
 type SharedChatMessage = { role: string; content: string; status?: string };
 type ChatSession = {
   id: string;
@@ -38,6 +39,7 @@ const activeChatProcesses = new Map<string, ReturnType<typeof spawn>>();
 const editTraceStore = new EditTraceStore();
 let isQuitting = false;
 let petWorkspaceDir: string | null = null;
+let compareBoundDir: string | null = null;
 let petDragState: { startMouseX: number; startMouseY: number; startWindowX: number; startWindowY: number } | null = null;
 
 const isDev = !app.isPackaged;
@@ -757,6 +759,138 @@ function showOrCreateMainWindow(): void {
   mainWindow.focus();
 }
 
+function createCompareWindow(): void {
+  if (compareWindow && !compareWindow.isDestroyed()) {
+    if (compareWindow.isMinimized()) {
+      compareWindow.restore();
+    }
+    if (!compareWindow.isVisible()) {
+      compareWindow.show();
+    }
+    compareWindow.focus();
+    return;
+  }
+
+  compareWindow = new BrowserWindow({
+    width: 1480,
+    height: 920,
+    show: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  compareWindow.setMenu(null);
+  loadRendererRoute(compareWindow, "/compare");
+  compareWindow.on("closed", () => {
+    compareWindow = null;
+  });
+}
+
+type CompareFileEntry = {
+  path: string;
+  name: string;
+  ext: string;
+  size: number;
+  updatedAt: string;
+};
+
+function compareFileExtSupported(ext: string): boolean {
+  return (
+    ext === ".xlsx" ||
+    ext === ".xls" ||
+    ext === ".docx" ||
+    ext === ".doc" ||
+    ext === ".pdf"
+  );
+}
+
+function listComparableFilesInDir(rootDir: string): CompareFileEntry[] {
+  const files: CompareFileEntry[] = [];
+  const stack: Array<{ dir: string; depth: number }> = [{ dir: rootDir, depth: 0 }];
+  const maxDepth = 5;
+  const maxCount = 3000;
+
+  while (stack.length > 0 && files.length < maxCount) {
+    const current = stack.pop();
+    if (!current) {
+      break;
+    }
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(current.dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(current.dir, entry.name);
+      if (entry.isDirectory()) {
+        if (current.depth < maxDepth) {
+          stack.push({ dir: fullPath, depth: current.depth + 1 });
+        }
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!compareFileExtSupported(ext)) {
+        continue;
+      }
+      try {
+        const stat = fs.statSync(fullPath);
+        files.push({
+          path: fullPath,
+          name: entry.name,
+          ext,
+          size: stat.size,
+          updatedAt: stat.mtime.toISOString(),
+        });
+      } catch {
+        // ignore one file stat failure and continue scanning
+      }
+    }
+  }
+
+  return files.sort((a, b) => {
+    const updatedDiff = Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+    if (updatedDiff !== 0) {
+      return updatedDiff;
+    }
+    return a.name.localeCompare(b.name, "zh-Hans-CN");
+  });
+}
+
+function resolveDefaultBoundDir(): string | null {
+  const projectRoot = isDev ? path.join(app.getAppPath(), "..") : path.join(app.getAppPath(), "..", "..");
+  try {
+    const stat = fs.statSync(projectRoot);
+    if (stat.isDirectory()) {
+      return projectRoot;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function ensureCompareBoundDir(): string | null {
+  if (compareBoundDir) {
+    try {
+      if (fs.statSync(compareBoundDir).isDirectory()) {
+        return compareBoundDir;
+      }
+    } catch {
+      compareBoundDir = null;
+    }
+  }
+  compareBoundDir = resolveDefaultBoundDir();
+  return compareBoundDir;
+}
+
 function createPetWindow(): void {
   if (petWindow && !petWindow.isDestroyed()) {
     return;
@@ -1458,6 +1592,102 @@ ipcMain.handle("trace:replay", async (_event, eventId: string) => {
 ipcMain.handle("trace:clear", async () => {
   editTraceStore.clear();
   return { ok: true };
+});
+
+ipcMain.handle("compare:openWindow", async () => {
+  createCompareWindow();
+  return { ok: true };
+});
+
+ipcMain.handle("compare:getBoundDir", async () => {
+  return ensureCompareBoundDir();
+});
+
+ipcMain.handle("compare:setBoundDir", async (_event, targetDir: string) => {
+  const dirPath = String(targetDir ?? "").trim();
+  if (!dirPath) {
+    return { ok: false, error: "目录不能为空" };
+  }
+  try {
+    const stat = fs.statSync(dirPath);
+    if (!stat.isDirectory()) {
+      return { ok: false, error: "目标不是目录" };
+    }
+    compareBoundDir = path.resolve(dirPath);
+    return { ok: true, dir: compareBoundDir };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle("compare:pickBoundDir", async () => {
+  const parent = getDialogParentWindow(compareWindow, mainWindow);
+  const options: OpenDialogOptions = {
+    title: "选择已绑定目录",
+    properties: ["openDirectory"],
+  };
+  const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) {
+    return { ok: false, message: "已取消" };
+  }
+  const selected = result.filePaths[0];
+  try {
+    const stat = fs.statSync(selected);
+    if (!stat.isDirectory()) {
+      return { ok: false, error: "目标不是目录" };
+    }
+    compareBoundDir = path.resolve(selected);
+    return { ok: true, dir: compareBoundDir };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle("compare:listBoundFiles", async () => {
+  const boundDir = ensureCompareBoundDir();
+  if (!boundDir) {
+    return { ok: false, error: "尚未绑定目录" };
+  }
+  try {
+    const files = listComparableFilesInDir(boundDir);
+    return { ok: true, dir: boundDir, files };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle("compare:pickFile", async (_event, payload?: { role?: "final" | "budget" }) => {
+  const role = payload?.role === "final" ? "决算表" : payload?.role === "budget" ? "预算表" : "文件";
+  const parent = getDialogParentWindow(compareWindow, mainWindow);
+  const options: OpenDialogOptions = {
+    title: `上传${role}`,
+    properties: ["openFile"],
+    filters: [
+      { name: "可预览文件", extensions: ["xlsx", "xls", "docx", "doc", "pdf"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  };
+  const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) {
+    return { ok: false, message: "已取消" };
+  }
+  return { ok: true, path: result.filePaths[0] };
+});
+
+ipcMain.handle("compare:previewTemplate", async (_event, filePath: string) => {
+  const targetPath = String(filePath ?? "").trim();
+  if (!targetPath) {
+    return { ok: false, error: "文件路径不能为空" };
+  }
+  if (!fs.existsSync(targetPath)) {
+    return { ok: false, error: "文件不存在" };
+  }
+  try {
+    const preview = await parseTemplate(targetPath);
+    return { ok: true, preview };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 });
 
 ipcMain.handle("trace:summary", async (_event, query?: string | EditTraceQuery) => {
