@@ -27,3 +27,6 @@ Pillow>=10.0.0
 # 环境变量管理（可选）
 python-dotenv>=1.0.0
 
+# RAG 评估（TruLens）
+trulens-eval>=0.33.0
+

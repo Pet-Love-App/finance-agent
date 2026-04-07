@@ -298,6 +298,40 @@ The current test suite mainly uses `unittest`:
 python -m unittest discover -s tests
 ```
 
+## RAG Evaluation (TruLens)
+
+An offline TruLens evaluation entry is available for the current retrieval pipeline (`search_policy`).
+
+### 1. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Run evaluation with auto-generated questions from KB
+
+```bash
+python run_trulens_eval.py --kb-path data/kb/reimbursement_kb.json --top-k 4 --max-samples 30
+```
+
+### 3. Run evaluation with a custom dataset
+
+```bash
+python run_trulens_eval.py --kb-path data/kb/reimbursement_kb.json --dataset data/eval/qa_eval_samples.json
+```
+
+Optional LLM Judge:
+
+```bash
+python run_trulens_eval.py --dataset data/eval/qa_eval_samples.json --use-llm-judge --judge-model gpt-4o-mini
+```
+
+Notes:
+
+- Requires `AGENT_LLM_API_KEY`; `AGENT_LLM_BASE_URL` is optional.
+- If the judge fails to initialize, scoring falls back to heuristic metrics.
+- Outputs are written to `data/eval/trulens_rag_eval_*.json`.
+
 ## Contributing
 
 Issues and pull requests are welcome.
