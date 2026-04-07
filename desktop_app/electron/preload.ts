@@ -74,6 +74,19 @@ type EditTraceEventDetail = EditTraceEvent & {
   afterContent?: string;
 };
 
+type EditTraceQuery = {
+  targetPath?: string;
+  operations?: TraceOperation[];
+  status?: "ok" | "failed";
+};
+
+type EditTraceSummary = {
+  total: number;
+  ok: number;
+  failed: number;
+  byOperation: Record<TraceOperation, number>;
+};
+
 const api = {
   openTemplate: async (): Promise<string | null> => ipcRenderer.invoke("template:open"),
   getPredefinedTemplate: async (type: string): Promise<string> => ipcRenderer.invoke("template:exportPredefined", type),
@@ -143,8 +156,8 @@ const api = {
       axis,
       count,
     }),
-  listEditTrace: async (targetPath?: string): Promise<EditTraceEvent[]> =>
-    ipcRenderer.invoke("trace:list", targetPath),
+  listEditTrace: async (query?: string | EditTraceQuery): Promise<EditTraceEvent[]> =>
+    ipcRenderer.invoke("trace:list", query),
   getEditTrace: async (eventId: string): Promise<EditTraceEventDetail | null> =>
     ipcRenderer.invoke("trace:get", eventId),
   replayEditTrace: async (
@@ -152,6 +165,12 @@ const api = {
   ): Promise<{ ok: boolean; targetPath?: string; content?: string; timestamp?: string; error?: string }> =>
     ipcRenderer.invoke("trace:replay", eventId),
   clearEditTrace: async (): Promise<{ ok: boolean }> => ipcRenderer.invoke("trace:clear"),
+  getEditTraceSummary: async (query?: string | EditTraceQuery): Promise<EditTraceSummary> =>
+    ipcRenderer.invoke("trace:summary", query),
+  exportEditTrace: async (
+    query?: string | EditTraceQuery
+  ): Promise<{ ok: boolean; filePath?: string; count?: number; message?: string }> =>
+    ipcRenderer.invoke("trace:export", query),
   getPreview: async (filePath: string): Promise<TemplatePreview> =>
     ipcRenderer.invoke("template:preview", filePath),
   subscribePreviewUpdate: (handler: (payload: TemplatePreview) => void): Unsubscribe => {

@@ -10,6 +10,7 @@ import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
 import type { OpenDialogOptions } from "electron";
 import * as XLSX from "xlsx";
 
+import type { EditTraceQuery } from "./editTrace";
 import { EditTraceStore } from "./editTrace";
 import { parseTemplate } from "./templateParser";
 
@@ -1418,9 +1419,12 @@ ipcMain.handle("template:unwatch", async () => {
   currentFilePath = null;
 });
 
-ipcMain.handle("trace:list", async (_event, targetPath?: string) => {
-  const normalizedPath = String(targetPath ?? "").trim();
-  return editTraceStore.list(normalizedPath || undefined);
+ipcMain.handle("trace:list", async (_event, query?: string | EditTraceQuery) => {
+  if (typeof query === "string") {
+    const normalizedPath = String(query).trim();
+    return editTraceStore.list({ targetPath: normalizedPath || undefined });
+  }
+  return editTraceStore.list(query);
 });
 
 ipcMain.handle("trace:get", async (_event, eventId: string) => {
@@ -1454,6 +1458,46 @@ ipcMain.handle("trace:replay", async (_event, eventId: string) => {
 ipcMain.handle("trace:clear", async () => {
   editTraceStore.clear();
   return { ok: true };
+});
+
+ipcMain.handle("trace:summary", async (_event, query?: string | EditTraceQuery) => {
+  if (typeof query === "string") {
+    const normalizedPath = String(query).trim();
+    return editTraceStore.summary({ targetPath: normalizedPath || undefined });
+  }
+  return editTraceStore.summary(query);
+});
+
+ipcMain.handle("trace:export", async (_event, query?: string | EditTraceQuery) => {
+  const parent = getDialogParentWindow(mainWindow);
+  const selectedQuery: EditTraceQuery =
+    typeof query === "string"
+      ? { targetPath: String(query).trim() || undefined }
+      : query ?? {};
+  const list = editTraceStore.list(selectedQuery);
+  const summary = editTraceStore.summary(selectedQuery);
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    query: selectedQuery,
+    summary,
+    events: list,
+  };
+  const result = parent
+    ? await dialog.showSaveDialog(parent, {
+        title: "导出编辑轨迹",
+        defaultPath: `edit-trace-${Date.now()}.json`,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      })
+    : await dialog.showSaveDialog({
+        title: "导出编辑轨迹",
+        defaultPath: `edit-trace-${Date.now()}.json`,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+  if (result.canceled || !result.filePath) {
+    return { ok: false, message: "已取消导出" };
+  }
+  fs.writeFileSync(result.filePath, JSON.stringify(payload, null, 2), "utf-8");
+  return { ok: true, filePath: result.filePath, count: list.length };
 });
 
 ipcMain.handle("agent:chat", async (_event, request: { message: string; payload?: unknown }) => {

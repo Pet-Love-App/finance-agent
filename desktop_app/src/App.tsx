@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Card, Input, Select, Space, Typography } from "antd";
 import { FileOutlined, FolderOpenOutlined, FolderOutlined } from "@ant-design/icons";
 
@@ -6,7 +6,13 @@ import { PreviewPanel } from "./components/PreviewPanel";
 import { MarkdownRenderer } from "./components/MarkdownRenderer";
 import type { AgentChatResponse, AgentChatStreamEvent, ChatMessage } from "./types/chat";
 import type { FilePreview } from "./types/preview";
-import type { EditTraceEvent, EditTraceEventDetail, TraceOperation } from "./types/trace";
+import type {
+  EditTraceEvent,
+  EditTraceEventDetail,
+  EditTraceQuery,
+  EditTraceSummary,
+  TraceOperation,
+} from "./types/trace";
 import { useThemeMode } from "./theme";
 
 type TaskType = "qa" | "reimburse" | "final_account" | "budget";
@@ -58,6 +64,10 @@ const TRACE_OPERATION_LABEL: Record<TraceOperation, string> = {
   trim_excel_sheet: "删除行列",
 };
 
+const TRACE_OPERATION_OPTIONS: Array<{ label: string; value: TraceOperation }> = (
+  Object.keys(TRACE_OPERATION_LABEL) as TraceOperation[]
+).map((key) => ({ value: key, label: TRACE_OPERATION_LABEL[key] }));
+
 export default function App() {
   const bridge = window.templateApi;
   const bridgeReady = Boolean(bridge);
@@ -90,8 +100,11 @@ export default function App() {
   const [editorLastSavedAt, setEditorLastSavedAt] = useState<string | null>(null);
   const [traceEvents, setTraceEvents] = useState<EditTraceEvent[]>([]);
   const [traceFilterPath, setTraceFilterPath] = useState("");
+  const [traceStatusFilter, setTraceStatusFilter] = useState<"all" | "ok" | "failed">("all");
+  const [traceOperationFilter, setTraceOperationFilter] = useState<TraceOperation[]>([]);
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceDetail, setTraceDetail] = useState<EditTraceEventDetail | null>(null);
+  const [traceSummary, setTraceSummary] = useState<EditTraceSummary | null>(null);
 
   const appRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -212,14 +225,30 @@ export default function App() {
     setEditorLastSavedAt(preview.updatedAt);
   }, [preview]);
 
-  const refreshTraceEvents = async (filterPath?: string) => {
+  const traceQuery = useMemo<EditTraceQuery>(() => {
+    const normalizedPath = traceFilterPath.trim();
+    return {
+      targetPath: normalizedPath || undefined,
+      operations: traceOperationFilter.length > 0 ? traceOperationFilter : undefined,
+      status: traceStatusFilter === "all" ? undefined : traceStatusFilter,
+    };
+  }, [traceFilterPath, traceOperationFilter, traceStatusFilter]);
+
+  const refreshTraceEvents = async (query?: EditTraceQuery) => {
     if (!bridge || typeof (bridge as any).listEditTrace !== "function") {
       return;
     }
     setTraceLoading(true);
     try {
-      const events = ((await (bridge as any).listEditTrace(filterPath)) ?? []) as EditTraceEvent[];
+      const usedQuery = query ?? traceQuery;
+      const [events, summary] = await Promise.all([
+        ((await (bridge as any).listEditTrace(usedQuery)) ?? []) as EditTraceEvent[],
+        typeof (bridge as any).getEditTraceSummary === "function"
+          ? ((await (bridge as any).getEditTraceSummary(usedQuery)) as EditTraceSummary)
+          : null,
+      ]);
       setTraceEvents(Array.isArray(events) ? events : []);
+      setTraceSummary(summary);
     } finally {
       setTraceLoading(false);
     }
@@ -229,12 +258,12 @@ export default function App() {
     if (!bridge || typeof (bridge as any).listEditTrace !== "function") {
       return;
     }
-    void refreshTraceEvents();
+    void refreshTraceEvents(traceQuery);
     const timer = window.setInterval(() => {
-      void refreshTraceEvents(traceFilterPath.trim() || undefined);
+      void refreshTraceEvents(traceQuery);
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [bridge, traceFilterPath]);
+  }, [bridge, traceQuery]);
 
   useEffect(() => {
     if (!bridge || typeof bridge.getProjectDir !== "function" || typeof bridge.listDir !== "function") {
@@ -765,6 +794,21 @@ export default function App() {
     await (bridge as any).clearEditTrace();
     setTraceDetail(null);
     setTraceEvents([]);
+    setTraceSummary(null);
+  };
+
+  const handleExportTraceEvents = async () => {
+    if (!bridge || typeof (bridge as any).exportEditTrace !== "function") {
+      return;
+    }
+    const result = await (bridge as any).exportEditTrace(traceQuery);
+    if (!result?.ok) {
+      if (result?.message && result.message !== "已取消导出") {
+        setError(result.message);
+      }
+      return;
+    }
+    setError(null);
   };
 
   const buildFriendlyError = (input: unknown): { short: string; detail: string } => {
@@ -1040,6 +1084,7 @@ export default function App() {
           updatedAt: writeResult.updatedAt || prev.updatedAt,
         };
       });
+      void refreshTraceEvents(traceQuery);
       return true;
     } catch (err) {
       setEditorError(err instanceof Error ? err.message : String(err));
@@ -1064,6 +1109,7 @@ export default function App() {
     const snapshot = await bridge.getPreview(currentFile);
     setPreview({ kind: "template", data: snapshot });
     setError(null);
+    void refreshTraceEvents(traceQuery);
   };
 
   const updateExcelRange = async (
@@ -1087,6 +1133,7 @@ export default function App() {
     const snapshot = await bridge.getPreview(currentFile);
     setPreview({ kind: "template", data: snapshot });
     setError(null);
+    void refreshTraceEvents(traceQuery);
   };
 
   const appendExcelRows = async (sheetName: string, count: number) => {
@@ -1099,6 +1146,7 @@ export default function App() {
     const snapshot = await bridge.getPreview(currentFile);
     setPreview({ kind: "template", data: snapshot });
     setError(null);
+    void refreshTraceEvents(traceQuery);
   };
 
   const trimExcelSheet = async (sheetName: string, axis: "row" | "col", count: number) => {
@@ -1111,6 +1159,7 @@ export default function App() {
     const snapshot = await bridge.getPreview(currentFile);
     setPreview({ kind: "template", data: snapshot });
     setError(null);
+    void refreshTraceEvents(traceQuery);
   };
 
   useEffect(() => {
@@ -1251,10 +1300,17 @@ export default function App() {
             <Space size="small">
               <Button
                 size="small"
-                onClick={() => void refreshTraceEvents(traceFilterPath.trim() || undefined)}
+                onClick={() => void refreshTraceEvents(traceQuery)}
                 disabled={!bridgeReady || traceLoading}
               >
                 刷新
+              </Button>
+              <Button
+                size="small"
+                onClick={() => void handleExportTraceEvents()}
+                disabled={!bridgeReady || traceEvents.length === 0}
+              >
+                导出
               </Button>
               <Button
                 size="small"
@@ -1265,11 +1321,37 @@ export default function App() {
               </Button>
             </Space>
           </div>
+          {traceSummary && (
+            <div className="trace-summary">
+              <span>总计 {traceSummary.total}</span>
+              <span>成功 {traceSummary.ok}</span>
+              <span>失败 {traceSummary.failed}</span>
+            </div>
+          )}
           <Input
             size="small"
             value={traceFilterPath}
             onChange={(event) => setTraceFilterPath(event.target.value)}
             placeholder="按文件路径筛选轨迹"
+          />
+          <Select
+            size="small"
+            value={traceStatusFilter}
+            onChange={(value) => setTraceStatusFilter(value as "all" | "ok" | "failed")}
+            options={[
+              { label: "全部状态", value: "all" },
+              { label: "仅成功", value: "ok" },
+              { label: "仅失败", value: "failed" },
+            ]}
+          />
+          <Select
+            mode="multiple"
+            size="small"
+            value={traceOperationFilter}
+            onChange={(value) => setTraceOperationFilter(value as TraceOperation[])}
+            options={TRACE_OPERATION_OPTIONS}
+            placeholder="筛选操作类型"
+            maxTagCount="responsive"
           />
           <div className="trace-list">
             {traceLoading ? (
@@ -1563,6 +1645,22 @@ export default function App() {
                       .map((snippet) => `L${snippet.line}\n- ${snippet.before}\n+ ${snippet.after}`)
                       .join("\n\n")}
                   </pre>
+                </div>
+              )}
+              {(traceDetail.beforeContent || traceDetail.afterContent) && (
+                <div className="trace-content-compare">
+                  <div className="trace-content-pane">
+                    <div className="trace-content-title">Before</div>
+                    <pre className="trace-snippet">
+                      {(traceDetail.beforeContent ?? "").split(/\r?\n/).slice(0, 80).join("\n")}
+                    </pre>
+                  </div>
+                  <div className="trace-content-pane">
+                    <div className="trace-content-title">After</div>
+                    <pre className="trace-snippet">
+                      {(traceDetail.afterContent ?? "").split(/\r?\n/).slice(0, 80).join("\n")}
+                    </pre>
+                  </div>
                 </div>
               )}
             </section>

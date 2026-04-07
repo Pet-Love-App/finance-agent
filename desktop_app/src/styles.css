@@ -682,6 +682,19 @@ body[data-theme="dark"] .app-layout {
   margin-top: 12px;
 }
 
+.trace-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin-top: 8px;
+}
+
 .trace-list {
   display: flex;
   flex-direction: column;
@@ -1138,6 +1151,27 @@ body[data-theme="dark"] .content {
   line-height: 1.6;
   white-space: pre-wrap;
   color: var(--text-main);
+}
+
+.trace-content-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.trace-content-pane {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.trace-content-title {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 80%, var(--surface-alt));
 }
 
 .editor-toolbar {

@@ -51,6 +51,19 @@ export type EditTraceEventDetail = EditTraceEvent & {
   afterContent?: string;
 };
 
+export type EditTraceQuery = {
+  targetPath?: string;
+  operations?: TraceOperation[];
+  status?: "ok" | "failed";
+};
+
+export type EditTraceSummary = {
+  total: number;
+  ok: number;
+  failed: number;
+  byOperation: Record<TraceOperation, number>;
+};
+
 const MAX_TRACE_EVENTS = 600;
 const MAX_TEXT_CAPTURE_BYTES = 256 * 1024;
 const SNIPPET_LIMIT = 10;
@@ -193,9 +206,15 @@ export class EditTraceStore {
     return result!;
   }
 
-  list(targetPath?: string): EditTraceEvent[] {
+  list(query?: EditTraceQuery): EditTraceEvent[] {
+    const targetPath = String(query?.targetPath ?? "").trim();
+    const status = query?.status;
+    const operations = Array.isArray(query?.operations) ? query?.operations : [];
+
     return this.events
-      .filter((event) => (targetPath ? event.targetPath === targetPath : true))
+      .filter((event) => (targetPath ? event.targetPath.includes(targetPath) : true))
+      .filter((event) => (status ? event.status === status : true))
+      .filter((event) => (operations.length > 0 ? operations.includes(event.operation) : true))
       .map(({ beforeContent: _beforeContent, afterContent: _afterContent, ...rest }) => rest);
   }
 
@@ -205,5 +224,32 @@ export class EditTraceStore {
 
   clear(): void {
     this.events.length = 0;
+  }
+
+  summary(query?: EditTraceQuery): EditTraceSummary {
+    const selected = this.list(query);
+    const byOperation: Record<TraceOperation, number> = {
+      write_file: 0,
+      update_excel_cell: 0,
+      update_excel_range: 0,
+      append_excel_rows: 0,
+      trim_excel_sheet: 0,
+    };
+    let ok = 0;
+    let failed = 0;
+    for (const event of selected) {
+      byOperation[event.operation] += 1;
+      if (event.status === "ok") {
+        ok += 1;
+      } else {
+        failed += 1;
+      }
+    }
+    return {
+      total: selected.length,
+      ok,
+      failed,
+      byOperation,
+    };
   }
 }

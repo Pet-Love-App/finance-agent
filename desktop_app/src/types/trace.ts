@@ -40,3 +40,16 @@ export type EditTraceEventDetail = EditTraceEvent & {
   beforeContent?: string;
   afterContent?: string;
 };
+
+export type EditTraceQuery = {
+  targetPath?: string;
+  operations?: TraceOperation[];
+  status?: "ok" | "failed";
+};
+
+export type EditTraceSummary = {
+  total: number;
+  ok: number;
+  failed: number;
+  byOperation: Record<TraceOperation, number>;
+};
