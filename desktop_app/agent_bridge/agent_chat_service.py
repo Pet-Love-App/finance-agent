@@ -15,6 +15,12 @@ import zipfile
 from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from collections import deque
+import atexit
+import copy
+import uuid
+import threading
+import time
 
 CURRENT_FILE = Path(__file__).resolve()
 
@@ -114,6 +120,194 @@ DEFAULT_MEMORY_SHORT_TERM_LIMIT = 14
 DEFAULT_MEMORY_RECENT_CONTEXT = 6
 DEFAULT_MEMORY_LONG_TERM_LIMIT = 24
 DEFAULT_MEMORY_SUMMARY_MAX_CHARS = 2400
+DEFAULT_HISTORY_EXTRACT_THRESHOLD = 12
+
+# In-memory cache + simple cross-process lock for safe writes
+_MEMORY_CACHE_LOCK = threading.Lock()
+_MEMORY_CACHE: Optional[Dict[str, Any]] = None
+_MEMORY_DIRTY = False
+_MEMORY_FLUSH_INTERVAL = 1.0  # seconds
+# Event to signal the background flush thread to exit and perform a final flush
+_MEMORY_FLUSH_STOP_EVENT = threading.Event()
+
+
+def _acquire_path_lock(path: Path, timeout: float = 5.0):
+    """Acquire an exclusive lock for ``path`` using a sibling lock file.
+
+    The function repeatedly attempts to create a ``.lock`` file next to the
+    target path using exclusive creation semantics. If successful, it writes
+    the current process ID into the lock file and returns the information
+    needed to release the lock later with ``_release_path_lock``.
+
+    Args:
+        path: The target file path to protect with a lock file.
+        timeout: Maximum number of seconds to wait for the lock before
+            raising an exception.
+
+    Returns:
+        A tuple ``(fd, lock_path)`` where ``fd`` is the open file descriptor
+        for the created lock file and ``lock_path`` is the path of that lock
+        file.
+
+    Raises:
+        TimeoutError: If the lock cannot be acquired within ``timeout``
+            seconds.
+        OSError: If creating or writing the lock file fails for a reason
+            other than the lock file already existing.
+    """
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    start = time.time()
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+            os.write(fd, str(os.getpid()).encode())
+            return fd, lock_path
+        except FileExistsError:
+            if time.time() - start > timeout:
+                raise TimeoutError(f"Timeout acquiring lock for {path}")
+            time.sleep(0.05)
+
+
+def _release_path_lock(fd: int, lock_path: Path) -> None:
+    try:
+        os.close(fd)
+    except Exception:
+        pass
+    try:
+        if lock_path.exists():
+            lock_path.unlink()
+    except Exception:
+        pass
+
+
+def _save_memory_store_immediate(store: Dict[str, Any]) -> None:
+    """Write store to disk immediately using an atomic temp file replace and lock."""
+    path = _memory_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    fd = None
+    lock_path = None
+    try:
+        fd, lock_path = _acquire_path_lock(path)
+        temp_path.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp_path.replace(path)
+    finally:
+        if fd is not None and lock_path is not None:
+            _release_path_lock(fd, lock_path)
+
+
+def _memory_flush_daemon() -> None:
+    global _MEMORY_DIRTY
+    # Periodically wake up to flush dirty cache. Exit when stop event is set.
+    try:
+        while not _MEMORY_FLUSH_STOP_EVENT.wait(_MEMORY_FLUSH_INTERVAL):
+            try:
+                snapshot = None
+                with _MEMORY_CACHE_LOCK:
+                    if _MEMORY_DIRTY and _MEMORY_CACHE is not None:
+                        snapshot = copy.deepcopy(_MEMORY_CACHE)
+                if snapshot is None:
+                    continue
+                _save_memory_store_immediate(snapshot)
+                with _MEMORY_CACHE_LOCK:
+                    if _MEMORY_DIRTY and _MEMORY_CACHE == snapshot:
+                        _MEMORY_DIRTY = False
+            except Exception:
+                # ignore flush errors; next cycle will retry
+                pass
+    finally:
+        # On thread exit, attempt one final immediate flush to reduce data loss.
+        try:
+            snapshot = None
+            with _MEMORY_CACHE_LOCK:
+                if _MEMORY_DIRTY and _MEMORY_CACHE is not None:
+                    snapshot = copy.deepcopy(_MEMORY_CACHE)
+            if snapshot is not None:
+                try:
+                    _save_memory_store_immediate(snapshot)
+                    with _MEMORY_CACHE_LOCK:
+                        if _MEMORY_DIRTY and _MEMORY_CACHE == snapshot:
+                            _MEMORY_DIRTY = False
+                except Exception:
+                    # last-resort: ignore
+                    pass
+        except Exception:
+            pass
+
+
+# background flush thread handle and lock. Thread will be started lazily
+# when memory operations require it (avoids issues during import/test).
+_MEMORY_FLUSH_THREAD: Optional[threading.Thread] = None
+_MEMORY_FLUSH_THREAD_LOCK = threading.Lock()
+
+
+def _ensure_memory_flush_thread_started() -> None:
+    """Start the memory flush thread lazily. Safe to call multiple times.
+
+    Use this from code paths that mutate memory (e.g. `_save_memory_store`) so
+    the thread isn't created at import time and test environments can control
+    lifecycle.
+    """
+    global _MEMORY_FLUSH_THREAD
+    try:
+        with _MEMORY_FLUSH_THREAD_LOCK:
+            if _MEMORY_FLUSH_THREAD is None or not _MEMORY_FLUSH_THREAD.is_alive():
+                _MEMORY_FLUSH_THREAD = threading.Thread(target=_memory_flush_daemon, daemon=False)
+                _MEMORY_FLUSH_THREAD.start()
+    except Exception:
+        # If starting the thread fails, fall back silently; writes will still
+        # be persisted by immediate-flush code paths.
+        pass
+
+
+def start_memory_flush_thread() -> None:
+    """Public helper to start the background flush thread."""
+    _ensure_memory_flush_thread_started()
+
+
+def stop_memory_flush_thread(timeout: float = 5.0) -> None:
+    """Public helper to stop the background flush thread and flush data."""
+    _shutdown_memory_flush(timeout=timeout)
+
+
+def _shutdown_memory_flush(timeout: float = 5.0) -> None:
+    """Signal the memory flush thread to stop, wait for it, and perform a final flush.
+
+    This is safe to call multiple times. It will set the stop event, join the
+    background thread (with a timeout), and attempt an immediate flush if any
+    dirty data remains.
+    """
+    try:
+        _MEMORY_FLUSH_STOP_EVENT.set()
+    except Exception:
+        pass
+    try:
+        if _MEMORY_FLUSH_THREAD is not None and _MEMORY_FLUSH_THREAD.is_alive():
+            try:
+                _MEMORY_FLUSH_THREAD.join(timeout)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # final immediate flush if still dirty
+    try:
+        with _MEMORY_CACHE_LOCK:
+            if _MEMORY_DIRTY and _MEMORY_CACHE is not None:
+                try:
+                    _save_memory_store_immediate(_MEMORY_CACHE)
+                    _MEMORY_DIRTY = False
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+# Ensure graceful shutdown on normal interpreter exit
+try:
+    atexit.register(_shutdown_memory_flush)
+except Exception:
+    pass
 
 
 def _memory_enabled(payload: Dict[str, Any]) -> bool:
@@ -122,6 +316,13 @@ def _memory_enabled(payload: Dict[str, Any]) -> bool:
         return raw
     text = str(raw).strip().lower()
     return text not in {"0", "false", "off", "no"}
+
+
+def _env_bool(key: str, default: bool = False) -> bool:
+    raw = os.getenv(key, "").strip()
+    if not raw:
+        return default
+    return str(raw).strip().lower() not in {"0", "false", "off", "no"}
 
 
 def _memory_path() -> Path:
@@ -140,29 +341,71 @@ def _memory_session_key(payload: Dict[str, Any]) -> str:
 
 
 def _load_memory_store() -> Dict[str, Any]:
+    global _MEMORY_CACHE
     path = _memory_path()
+    # if cached in-memory, return a shallow copy to callers
+    with _MEMORY_CACHE_LOCK:
+        if _MEMORY_CACHE is not None:
+            try:
+                # Prefer a true deepcopy; fall back to a shallow dict copy if deepcopy fails.
+                return copy.deepcopy(_MEMORY_CACHE)
+            except Exception:
+                try:
+                    return dict(_MEMORY_CACHE)
+                except Exception:
+                    # fallback to reading from disk
+                    pass
     if not path.exists():
         return {"version": 1, "sessions": {}}
+    fd = None
+    lock_path = None
     try:
-        raw = path.read_text(encoding="utf-8")
-        parsed = json.loads(raw)
-    except Exception:
-        return {"version": 1, "sessions": {}}
-    if not isinstance(parsed, dict):
-        return {"version": 1, "sessions": {}}
-    sessions = parsed.get("sessions")
-    if not isinstance(sessions, dict):
-        parsed["sessions"] = {}
-    parsed.setdefault("version", 1)
-    return parsed
+        fd, lock_path = _acquire_path_lock(path)
+        try:
+            raw = path.read_text(encoding="utf-8")
+            parsed = json.loads(raw)
+        except Exception:
+            parsed = {"version": 1, "sessions": {}}
+        if not isinstance(parsed, dict):
+            parsed = {"version": 1, "sessions": {}}
+        sessions = parsed.get("sessions")
+        if not isinstance(sessions, dict):
+            parsed["sessions"] = {}
+        parsed.setdefault("version", 1)
+        with _MEMORY_CACHE_LOCK:
+            _MEMORY_CACHE = parsed
+        return parsed
+    finally:
+        if fd is not None and lock_path is not None:
+            _release_path_lock(fd, lock_path)
 
 
 def _save_memory_store(store: Dict[str, Any]) -> None:
-    path = _memory_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_suffix(path.suffix + ".tmp")
-    temp_path.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
-    temp_path.replace(path)
+    # update in-memory cache and mark dirty; background thread will flush
+    global _MEMORY_CACHE, _MEMORY_DIRTY
+    with _MEMORY_CACHE_LOCK:
+        _MEMORY_CACHE = store
+        _MEMORY_DIRTY = True
+
+    # Ensure the background flush thread is running so the dirty cache will be
+    # flushed. Lazy start avoids creating threads at import time (helps tests).
+    try:
+        _ensure_memory_flush_thread_started()
+    except Exception:
+        pass
+
+    # Optional immediate flush for short-lived child processes
+    try:
+        if _env_bool("AGENT_MEMORY_IMMEDIATE_FLUSH", False):
+            try:
+                _save_memory_store_immediate(store)
+                with _MEMORY_CACHE_LOCK:
+                    _MEMORY_DIRTY = False
+            except Exception:
+                # fall back to background flush
+                pass
+    except Exception:
+        pass
 
 
 def _get_or_create_memory_session(store: Dict[str, Any], session_key: str) -> Dict[str, Any]:
@@ -197,7 +440,17 @@ def _reset_memory_session(payload: Dict[str, Any]) -> None:
     sessions = store.setdefault("sessions", {})
     if isinstance(sessions, dict):
         sessions.pop(session_key, None)
+    # Always update the in-memory cache for this process first, then attempt
+    # an immediate flush so reset operations become durable on disk promptly.
     _save_memory_store(store)
+    try:
+        _save_memory_store_immediate(store)
+        with _MEMORY_CACHE_LOCK:
+            _MEMORY_DIRTY = False
+    except Exception:
+        # Cache is already updated and marked dirty; background flush will
+        # persist it if the immediate write fails.
+        pass
 
 
 def _summarize_messages(messages: List[Dict[str, str]], *, max_chars: int = 900) -> str:
@@ -210,6 +463,58 @@ def _summarize_messages(messages: List[Dict[str, str]], *, max_chars: int = 900)
         lines.append(f"- {role}: {content[:140]}")
     text = "\n".join(lines)
     return text[:max_chars]
+
+
+def _compute_importance(text: str, *, role: str = "user") -> float:
+    """Compute a heuristic importance score used for memory promotion decisions.
+
+    The score estimates how likely a message is to contain information worth
+    retaining beyond the short-term conversation buffer. This is a heuristic,
+    additive scoring algorithm:
+
+    * Empty input returns ``0.0`` immediately.
+    * Non-empty input starts with a base score of ``0.2``.
+    * Add ``1.2`` if the text contains explicit imperative or memory-related
+      keywords such as ``记住``、``重要``、``必须``、``务必`` or ``一定``.
+    * Add ``0.8`` if the original text matches a personal profile pattern such
+      as ``我叫...``.
+    * Add ``0.4`` if the text contains dates or numeric facts, including forms
+      like ``YYYY-MM-DD``, ``MM月``, ``DD日``, ``N年`` or other digits.
+    * Add ``0.3`` for short factual statements (under 120 characters) that
+      include cues such as ``是``、``来自`` or ``公司``.
+
+    The final value is capped at ``2.5`` and rounded to three decimal places,
+    so the effective return range is ``0.0`` to ``2.5`` inclusive.
+
+    Args:
+        text: Message content to evaluate.
+        role: Logical speaker role for the message. It is currently accepted for
+            interface consistency and future heuristic extensions, but it does
+            not affect the score in the current implementation.
+
+    Returns:
+        A floating-point importance score in the range ``0.0`` to ``2.5``,
+        where higher values indicate that the message is more likely to be
+        promoted into longer-term memory.
+    """
+    if not text:
+        return 0.0
+    score = 0.2
+    t = text.lower()
+    # explicit imperative keywords
+    if any(k in t for k in ("记住", "重要", "必须", "务必", "一定")):
+        score += 1.2
+    # personal profile signals
+    if re.search(r"我叫[^\s，。,；;]+", text):
+        score += 0.8
+    # presence of dates/numbers suggests factual content
+    if re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}月|\d{1,2}日|\d+年|\d+", text):
+        score += 0.4
+    # short explicit facts
+    if len(text) < 120 and ("是" in t or "来自" in t or "公司" in t):
+        score += 0.3
+    # cap
+    return round(min(score, 2.5), 3)
 
 
 def _extract_memory_facts(message: str) -> List[Dict[str, str]]:
@@ -258,7 +563,11 @@ def _merge_memory_profile(session: Dict[str, Any], memory_profile: Any) -> None:
             continue
         profile[normalized_key] = str(value).strip()[:200]
 
-
+    # Build a temporary working deque that is larger than the final short-term limit
+    # so we can score, deduplicate, and promote entries before trimming back down.
+    # `short_limit * 2` keeps roughly one extra window of candidates available during
+    # that selection pass, while `short_limit + 4` guarantees a small fixed cushion
+    # when the configured short-term limit is near its minimum.
 def _remember_turn(payload: Dict[str, Any], user_message: str, assistant_reply: str) -> None:
     if not _memory_enabled(payload):
         return
@@ -268,37 +577,143 @@ def _remember_turn(payload: Dict[str, Any], user_message: str, assistant_reply: 
 
     _merge_memory_profile(session, payload.get("memory_profile"))
 
-    short_term = session.setdefault("short_term", [])
-    if not isinstance(short_term, list):
-        short_term = []
-        session["short_term"] = short_term
+    # handle short_term as a deque with importance scoring and promotion
+    raw_short = session.setdefault("short_term", [])
+    if not isinstance(raw_short, list):
+        raw_short = []
+        session["short_term"] = raw_short
 
     short_limit = _safe_int_env("AGENT_MEMORY_SHORT_TERM_LIMIT", DEFAULT_MEMORY_SHORT_TERM_LIMIT, min_value=6)
     summary_max_chars = _safe_int_env("AGENT_MEMORY_SUMMARY_MAX_CHARS", DEFAULT_MEMORY_SUMMARY_MAX_CHARS, min_value=800)
 
     user_text = str(user_message or "").strip()
     reply_text = str(assistant_reply or "").strip()
+
+    # build working deque (allow some overflow to choose important messages)
+    work_max = max(short_limit * 2, short_limit + 4)
+    dq = deque(raw_short, maxlen=work_max)
+
+    now_ts = datetime.datetime.now().isoformat()
+    # Also ingest recent user messages from the frontend-provided history (context window)
+    try:
+        history_items = payload.get("history", []) if isinstance(payload, dict) else []
+        if isinstance(history_items, list) and history_items:
+            # take up to last `short_limit` user messages from history (older -> newer)
+            user_hist = [str(it.get("content", "")).strip() for it in history_items if isinstance(it, dict) and it.get("role") == "user"]
+            if user_hist:
+                # avoid duplicates already in short_term
+                existing_contents = {str(it.get("content", "")).strip() for it in dq if isinstance(it, dict)}
+                for txt in user_hist[-short_limit:]:
+                    if not txt:
+                        continue
+                    if txt in existing_contents:
+                        continue
+                    entry = {
+                        "id": uuid.uuid4().hex,
+                        "role": "user",
+                        "content": txt[:2000],
+                        "ts": now_ts,
+                        "importance": _compute_importance(txt, role="user"),
+                    }
+                    dq.append(entry)
+                    existing_contents.add(txt)
+    except Exception:
+        # be conservative: don't let history ingestion break memory flow
+        pass
     if user_text:
-        short_term.append({"role": "user", "content": user_text[:2000]})
+        entry = {
+            "id": uuid.uuid4().hex,
+            "role": "user",
+            "content": user_text[:2000],
+            "ts": now_ts,
+            "importance": _compute_importance(user_text, role="user"),
+        }
+        dq.append(entry)
     if reply_text:
-        short_term.append({"role": "assistant", "content": reply_text[:2200]})
+        entry = {
+            "id": uuid.uuid4().hex,
+            "role": "assistant",
+            "content": reply_text[:2200],
+            "ts": now_ts,
+            "importance": _compute_importance(reply_text, role="assistant"),
+        }
+        dq.append(entry)
 
     rolling_summary = str(session.get("rolling_summary", "") or "")
-    if len(short_term) > short_limit:
-        keep_count = max(short_limit // 2, 4)
-        overflow_count = len(short_term) - keep_count
-        overflow = short_term[:overflow_count]
-        short_term = short_term[overflow_count:]
-        session["short_term"] = short_term
+
+    # trim using priority: keep recent + top-important from older
+    if len(dq) > short_limit:
+        keep_recent = max(short_limit // 2, 4)
+        list_all = list(dq)
+
+        # Normalize ids for legacy persisted entries and avoid duplicate ids so
+        # trimming/overflow logic can reliably identify individual messages.
+        seen_ids: Set[str] = set()
+        for item in list_all:
+            item_id = item.get("id")
+            if not item_id or item_id in seen_ids:
+                item_id = uuid.uuid4().hex
+                item["id"] = item_id
+            seen_ids.add(item_id)
+
+        recent = list_all[-keep_recent:]
+        older = list_all[:-keep_recent]
+        need = max(short_limit - keep_recent, 0)
+        # select top important from older
+        selected = sorted(older, key=lambda x: float(x.get("importance", 0.0)), reverse=True)[:need]
+        kept_ids = {it["id"] for it in recent}
+        kept_ids.update(it["id"] for it in selected)
+        # Preserve original chronological order when combining recent and selected.
+        final_short = [it for it in list_all if it["id"] in kept_ids]
+        # compute overflow
+        overflow = [it for it in list_all if it["id"] not in kept_ids]
+        # update session short_term as list for persistence
+        session["short_term"] = final_short
+        # summarize overflow into rolling_summary
         overflow_summary = _summarize_messages(overflow, max_chars=1000)
         if overflow_summary:
             rolling_summary = (rolling_summary + "\n" + overflow_summary).strip() if rolling_summary else overflow_summary
             session["rolling_summary"] = rolling_summary[:summary_max_chars]
+    else:
+        # no trimming needed; persist current deque
+        session["short_term"] = list(dq)
 
     long_term = session.setdefault("long_term", [])
     if not isinstance(long_term, list):
         long_term = []
         session["long_term"] = long_term
+
+    # Promote high-importance short-term messages to long_term if they contain extractable facts
+    promote_threshold = 1.0
+    now = datetime.datetime.now().isoformat()
+    existing_facts = {str(item.get("fact", "")) for item in long_term if isinstance(item, dict)}
+    try:
+        short_entries = session.get("short_term", []) or []
+        for entry in short_entries:
+            try:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("role") != "user":
+                    continue
+                importance = float(entry.get("importance", 0.0))
+                if importance < promote_threshold:
+                    continue
+                facts = _extract_memory_facts(str(entry.get("content", "")))
+                for item in facts:
+                    fact = str(item.get("fact", "")).strip()
+                    if not fact or fact in existing_facts:
+                        continue
+                    long_term.append({
+                        "type": str(item.get("type", "fact")),
+                        "fact": fact,
+                        "source": "auto_promote",
+                        "updated_at": now,
+                    })
+                    existing_facts.add(fact)
+            except Exception:
+                continue
+    except Exception:
+        pass
 
     extracted = _extract_memory_facts(user_text)
     if extracted:
@@ -322,6 +737,52 @@ def _remember_turn(payload: Dict[str, Any], user_message: str, assistant_reply: 
         session["long_term"] = long_term[-long_limit:]
 
     session["updated_at"] = datetime.datetime.now().isoformat()
+    # If frontend provided a long history and it reaches threshold, run extraction+immediate flush
+    try:
+        history_items = payload.get("history", []) if isinstance(payload, dict) else []
+        history_count = len(history_items) if isinstance(history_items, list) else 0
+        extract_threshold = _safe_int_env("AGENT_MEMORY_EXTRACT_HISTORY_THRESHOLD", DEFAULT_HISTORY_EXTRACT_THRESHOLD, min_value=1)
+        if history_count >= extract_threshold:
+            try:
+                existing_facts = {str(item.get("fact", "")) for item in long_term if isinstance(item, dict)}
+                now_iso = datetime.datetime.now().isoformat()
+                # examine last `extract_threshold` user messages
+                user_hist = [str(it.get("content", "")).strip() for it in history_items if isinstance(it, dict) and it.get("role") == "user"]
+                for txt in user_hist[-extract_threshold:]:
+                    if not txt:
+                        continue
+                    facts = _extract_memory_facts(txt)
+                    for item in facts:
+                        fact = str(item.get("fact", "")).strip()
+                        if not fact or fact in existing_facts:
+                            continue
+                        # promote if explicit or importance meets threshold
+                        score = _compute_importance(txt, role="user")
+                        promote_threshold = _safe_int_env("AGENT_MEMORY_PROMOTE_THRESHOLD", 1, min_value=0)
+                        if item.get("type") == "explicit" or float(score) >= float(promote_threshold):
+                            long_term.append({
+                                "type": str(item.get("type", "fact")),
+                                "fact": fact,
+                                "source": "auto_from_history",
+                                "updated_at": now_iso,
+                            })
+                            existing_facts.add(fact)
+                # trim long_term
+                long_limit = _safe_int_env("AGENT_MEMORY_LONG_TERM_LIMIT", DEFAULT_MEMORY_LONG_TERM_LIMIT, min_value=6)
+                if len(long_term) > long_limit:
+                    session["long_term"] = long_term[-long_limit:]
+                # immediate flush to disk so short-lived processes persist
+                try:
+                    _save_memory_store_immediate(store)
+                    with _MEMORY_CACHE_LOCK:
+                        _MEMORY_DIRTY = False
+                except Exception:
+                    _save_memory_store(store)
+            except Exception:
+                # ignore extraction errors
+                pass
+    except Exception:
+        pass
     _save_memory_store(store)
 
 
