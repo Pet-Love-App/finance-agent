@@ -2,6 +2,16 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+from agent.graphs.names import (
+    NODE_BUDGET_START,
+    NODE_FILE_EDIT_START,
+    NODE_FINAL_START,
+    NODE_INTENT_CLARIFY,
+    NODE_INTENT_CONFIRM,
+    NODE_QA_START,
+    NODE_REIMBURSE_START,
+    NODE_SANDBOX_START,
+)
 from agent.graphs.state import AppState
 
 
@@ -283,19 +293,19 @@ def route_by_task(state: AppState) -> str:
     route_decision = state.get("route_decision", {}) if isinstance(state.get("route_decision", {}), dict) else {}
     payload = state.get("payload", {}) if isinstance(state.get("payload", {}), dict) else {}
     if _to_bool(route_decision.get("clarification_required", False)):
-        return "IntentClarifyNode"
+        return NODE_INTENT_CLARIFY
     if _to_bool(route_decision.get("requires_confirmation", False)) and not _is_confirmed(payload):
-        return "IntentConfirmNode"
+        return NODE_INTENT_CONFIRM
 
     task_type = str(state.get("task_type", TASK_REIMBURSE))
     if task_type == TASK_QA:
-        return "QAStartNode"
+        return NODE_QA_START
     if task_type == TASK_FINAL:
-        return "FinalStartNode"
+        return NODE_FINAL_START
     if task_type == TASK_BUDGET:
-        return "BudgetStartNode"
+        return NODE_BUDGET_START
     if task_type == TASK_SANDBOX:
-        return "SandboxStartNode"
+        return NODE_SANDBOX_START
     if task_type == TASK_FILE_EDIT:
-        return "FileEditStartNode"
-    return "ReimburseStartNode"
+        return NODE_FILE_EDIT_START
+    return NODE_REIMBURSE_START

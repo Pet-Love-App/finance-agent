@@ -1,0 +1,151 @@
+{
+  "conditional_routes": {
+    "budget.load_final_data": {
+      "keys": [
+        "BudgetCalculateNode",
+        "BudgetFailNode",
+        "BudgetGenerateNode"
+      ],
+      "targets": [
+        "BudgetCalculateNode",
+        "BudgetFailNode",
+        "BudgetGenerateNode"
+      ]
+    },
+    "final.data_clean": {
+      "keys": [
+        "DataAggregateNode",
+        "FinalFailNode",
+        "FinalGenerateNode"
+      ],
+      "targets": [
+        "DataAggregateNode",
+        "FinalFailNode",
+        "FinalGenerateNode"
+      ]
+    },
+    "final.load_records": {
+      "keys": [
+        "DataCleanNode",
+        "FinalFailNode",
+        "FinalGenerateNode"
+      ],
+      "targets": [
+        "DataCleanNode",
+        "FinalFailNode",
+        "FinalGenerateNode"
+      ]
+    },
+    "intent": {
+      "keys": [
+        "BudgetStartNode",
+        "FileEditStartNode",
+        "FinalStartNode",
+        "IntentClarifyNode",
+        "IntentConfirmNode",
+        "QAStartNode",
+        "ReimburseStartNode",
+        "SandboxStartNode"
+      ],
+      "targets": [
+        "BudgetStartNode",
+        "FileEditStartNode",
+        "FinalStartNode",
+        "IntentClarifyNode",
+        "IntentConfirmNode",
+        "QAStartNode",
+        "ReimburseStartNode",
+        "SandboxStartNode"
+      ]
+    },
+    "qa.understand": {
+      "keys": [
+        "QAFallbackNode",
+        "RuleRetrieveNode"
+      ],
+      "targets": [
+        "QAFallbackNode",
+        "RuleRetrieveNode"
+      ]
+    },
+    "reimburse.extract": {
+      "keys": [
+        "ActivityParseNode",
+        "InvoiceExtractNode",
+        "ReimburseFailNode"
+      ],
+      "targets": [
+        "ActivityParseNode",
+        "InvoiceExtractNode",
+        "ReimburseFailNode"
+      ]
+    },
+    "reimburse.rule_check": {
+      "keys": [
+        "GenDocNode",
+        "SaveRecordNode"
+      ],
+      "targets": [
+        "GenDocNode",
+        "SaveRecordNode"
+      ]
+    },
+    "reimburse.scan": {
+      "keys": [
+        "ClassifyFileNode",
+        "ReimburseFailNode",
+        "SaveRecordNode"
+      ],
+      "targets": [
+        "ClassifyFileNode",
+        "ReimburseFailNode",
+        "SaveRecordNode"
+      ]
+    }
+  },
+  "intent_route_targets": [
+    "BudgetStartNode",
+    "FileEditStartNode",
+    "FinalStartNode",
+    "IntentClarifyNode",
+    "IntentConfirmNode",
+    "QAStartNode",
+    "ReimburseStartNode",
+    "SandboxStartNode"
+  ],
+  "nodes": [
+    "ActivityParseNode",
+    "BudgetCalculateNode",
+    "BudgetFailNode",
+    "BudgetGenerateNode",
+    "BudgetStartNode",
+    "ClassifyFileNode",
+    "DataAggregateNode",
+    "DataCleanNode",
+    "ExtractNode",
+    "FileEditGatewayNode",
+    "FileEditStartNode",
+    "FinalFailNode",
+    "FinalGenerateNode",
+    "FinalStartNode",
+    "GenDocNode",
+    "GenMailNode",
+    "IntentClarifyNode",
+    "IntentConfirmNode",
+    "IntentNode",
+    "InvoiceExtractNode",
+    "LoadFinalDataNode",
+    "LoadRecordNode",
+    "QAFallbackNode",
+    "QAStartNode",
+    "QuestionUnderstandNode",
+    "ReimburseFailNode",
+    "ReimburseStartNode",
+    "RuleCheckNode",
+    "RuleRetrieveNode",
+    "SandboxExecuteNode",
+    "SandboxStartNode",
+    "SaveRecordNode",
+    "ScanFileNode"
+  ]
+}

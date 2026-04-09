@@ -1,0 +1,98 @@
+from __future__ import annotations
+
+# Intent and guard layer
+NODE_INTENT = "IntentNode"
+NODE_INTENT_CLARIFY = "IntentClarifyNode"
+NODE_INTENT_CONFIRM = "IntentConfirmNode"
+
+# Reimburse flow
+NODE_REIMBURSE_START = "ReimburseStartNode"
+NODE_SCAN_FILE = "ScanFileNode"
+NODE_CLASSIFY_FILE = "ClassifyFileNode"
+NODE_EXTRACT = "ExtractNode"
+NODE_INVOICE_EXTRACT = "InvoiceExtractNode"
+NODE_ACTIVITY_PARSE = "ActivityParseNode"
+NODE_RULE_CHECK = "RuleCheckNode"
+NODE_GEN_DOC = "GenDocNode"
+NODE_GEN_MAIL = "GenMailNode"
+NODE_SAVE_RECORD = "SaveRecordNode"
+NODE_REIMBURSE_FAIL = "ReimburseFailNode"
+
+# QA flow
+NODE_QA_START = "QAStartNode"
+NODE_QUESTION_UNDERSTAND = "QuestionUnderstandNode"
+NODE_RULE_RETRIEVE = "RuleRetrieveNode"
+NODE_QA_FALLBACK = "QAFallbackNode"
+
+# Final account flow
+NODE_FINAL_START = "FinalStartNode"
+NODE_LOAD_RECORD = "LoadRecordNode"
+NODE_DATA_CLEAN = "DataCleanNode"
+NODE_DATA_AGGREGATE = "DataAggregateNode"
+NODE_FINAL_GENERATE = "FinalGenerateNode"
+NODE_FINAL_FAIL = "FinalFailNode"
+
+# Budget flow
+NODE_BUDGET_START = "BudgetStartNode"
+NODE_LOAD_FINAL_DATA = "LoadFinalDataNode"
+NODE_BUDGET_CALCULATE = "BudgetCalculateNode"
+NODE_BUDGET_GENERATE = "BudgetGenerateNode"
+NODE_BUDGET_FAIL = "BudgetFailNode"
+
+# Sandbox flow
+NODE_SANDBOX_START = "SandboxStartNode"
+NODE_SANDBOX_EXECUTE = "SandboxExecuteNode"
+
+# File edit flow
+NODE_FILE_EDIT_START = "FileEditStartNode"
+NODE_FILE_EDIT_GATEWAY = "FileEditGatewayNode"
+
+# Intent route map targets
+INTENT_ROUTE_TARGETS = {
+    NODE_INTENT_CLARIFY,
+    NODE_INTENT_CONFIRM,
+    NODE_REIMBURSE_START,
+    NODE_QA_START,
+    NODE_FINAL_START,
+    NODE_BUDGET_START,
+    NODE_SANDBOX_START,
+    NODE_FILE_EDIT_START,
+}
+
+# All graph nodes managed by the main graph.
+ALL_GRAPH_NODES = {
+    NODE_INTENT,
+    NODE_INTENT_CLARIFY,
+    NODE_INTENT_CONFIRM,
+    NODE_REIMBURSE_START,
+    NODE_SCAN_FILE,
+    NODE_CLASSIFY_FILE,
+    NODE_EXTRACT,
+    NODE_INVOICE_EXTRACT,
+    NODE_ACTIVITY_PARSE,
+    NODE_RULE_CHECK,
+    NODE_GEN_DOC,
+    NODE_GEN_MAIL,
+    NODE_SAVE_RECORD,
+    NODE_REIMBURSE_FAIL,
+    NODE_QA_START,
+    NODE_QUESTION_UNDERSTAND,
+    NODE_RULE_RETRIEVE,
+    NODE_QA_FALLBACK,
+    NODE_FINAL_START,
+    NODE_LOAD_RECORD,
+    NODE_DATA_CLEAN,
+    NODE_DATA_AGGREGATE,
+    NODE_FINAL_GENERATE,
+    NODE_FINAL_FAIL,
+    NODE_BUDGET_START,
+    NODE_LOAD_FINAL_DATA,
+    NODE_BUDGET_CALCULATE,
+    NODE_BUDGET_GENERATE,
+    NODE_BUDGET_FAIL,
+    NODE_SANDBOX_START,
+    NODE_SANDBOX_EXECUTE,
+    NODE_FILE_EDIT_START,
+    NODE_FILE_EDIT_GATEWAY,
+}
+

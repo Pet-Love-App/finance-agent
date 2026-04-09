@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
+from agent.graphs.contracts import describe_graph_contract
+from agent.graphs.names import ALL_GRAPH_NODES, INTENT_ROUTE_TARGETS
 from agent.graphs.intent import intent_node, route_by_task
+from agent.graphs.spec import build_conditional_route_snapshot
 from agent.graphs.subgraphs.budget import route_after_load_final_data
 from agent.graphs.subgraphs.final_account import final_generate_node
 from agent.graphs.subgraphs.file_edit import file_edit_gateway_node
@@ -13,6 +17,72 @@ from agent.graphs.subgraphs.reimburse import route_after_extract, route_after_sc
 
 
 class TestSupervisorRouter(unittest.TestCase):
+    def test_graph_contract_snapshot_up_to_date(self) -> None:
+        snapshot_path = Path(__file__).resolve().parents[1] / "agent" / "graphs" / "graph_contract_snapshot.json"
+        self.assertTrue(snapshot_path.exists(), "缺少图契约快照文件，请执行 scripts/update_graph_contract_snapshot.py")
+        expected = describe_graph_contract()
+        actual = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        self.assertDictEqual(actual, expected)
+
+    def test_conditional_route_snapshot(self) -> None:
+        snapshot = build_conditional_route_snapshot()
+        self.assertIn("intent", snapshot)
+        self.assertIn("reimburse.scan", snapshot)
+        self.assertIn("budget.load_final_data", snapshot)
+        self.assertIn("IntentClarifyNode", snapshot["intent"]["targets"])
+        self.assertIn("IntentConfirmNode", snapshot["intent"]["targets"])
+
+    def test_all_graph_nodes_contract(self) -> None:
+        required_nodes = {
+            "IntentNode",
+            "IntentClarifyNode",
+            "IntentConfirmNode",
+            "ReimburseStartNode",
+            "ScanFileNode",
+            "ClassifyFileNode",
+            "ExtractNode",
+            "InvoiceExtractNode",
+            "ActivityParseNode",
+            "RuleCheckNode",
+            "GenDocNode",
+            "GenMailNode",
+            "SaveRecordNode",
+            "ReimburseFailNode",
+            "QAStartNode",
+            "QuestionUnderstandNode",
+            "RuleRetrieveNode",
+            "QAFallbackNode",
+            "FinalStartNode",
+            "LoadRecordNode",
+            "DataCleanNode",
+            "DataAggregateNode",
+            "FinalGenerateNode",
+            "FinalFailNode",
+            "BudgetStartNode",
+            "LoadFinalDataNode",
+            "BudgetCalculateNode",
+            "BudgetGenerateNode",
+            "BudgetFailNode",
+            "SandboxStartNode",
+            "SandboxExecuteNode",
+            "FileEditStartNode",
+            "FileEditGatewayNode",
+        }
+        self.assertSetEqual(set(ALL_GRAPH_NODES), required_nodes)
+
+    def test_intent_route_targets_contract(self) -> None:
+        required_targets = {
+            "IntentClarifyNode",
+            "IntentConfirmNode",
+            "ReimburseStartNode",
+            "QAStartNode",
+            "FinalStartNode",
+            "BudgetStartNode",
+            "SandboxStartNode",
+            "FileEditStartNode",
+        }
+        self.assertSetEqual(set(INTENT_ROUTE_TARGETS), required_targets)
+
     def test_intent_node_recon_classification(self) -> None:
         state = {
             "payload": {"query": "请核对预算表和决算表差异"},
