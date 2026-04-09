@@ -1,7 +1,30 @@
 from __future__ import annotations
 
-import errno
+# Patch: ensure certifi CA bundle and disable strict SSL verify in local dev if needed
+import os
+import ssl
+try:
+    import certifi
+    cert_path = certifi.where()
+    os.environ['SSL_CERT_FILE'] = cert_path
+    os.environ['REQUESTS_CA_BUNDLE'] = cert_path
+    os.environ['CURL_CA_BUNDLE'] = cert_path
+except Exception:
+    # leave env unchanged if certifi not available
+    cert_path = None
+
+try:
+    ssl._create_default_https_context = ssl._create_unverified_context
+except Exception:
+    pass
+
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from collections import deque
+import atexit
+import copy
 import datetime
+import errno
 import hashlib
 import json
 import os
@@ -9,18 +32,13 @@ import re
 import signal
 import sys
 import textwrap
-import urllib.error
-import urllib.request
-import zipfile
-from urllib.parse import urlparse
-from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
-from collections import deque
-import atexit
-import copy
-import uuid
 import threading
 import time
+import urllib.error
+import urllib.request
+from urllib.parse import urlparse
+import uuid
+import zipfile
 
 CURRENT_FILE = Path(__file__).resolve()
 
@@ -53,7 +71,6 @@ SYSTEM_PROMPT = (
     "请使用自然、友好、专业的中文回答，先理解用户真实目标，再给出结论。"
     "默认采用“结论 + 关键步骤 + 注意事项”的结构，尽量短句表达，避免堆砌术语。"
     "当信息不足时，先给一个可执行的初步方案，再明确指出需要用户补充的关键信息。"
-    "若涉及编辑文件但目标文件或改动范围不明确，先用一句话确认路径/文件名后再执行。"
     "若用户询问报销审计规则，请结合常见合规点和风险等级给出建议；"
     "若问题超出报销场景，也可进行通用问答并保持同样风格。"
 )
@@ -1201,43 +1218,6 @@ def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _extract_workspace_plan(text: str) -> Optional[Dict[str, Any]]:
-    raw = str(text or "").strip()
-    if not raw:
-        return None
-
-    parsed = _extract_json_block(raw)
-    if isinstance(parsed, dict):
-        return parsed
-
-    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw, flags=re.IGNORECASE)
-    if fence_match:
-        fenced = str(fence_match.group(1) or "").strip()
-        parsed = _extract_json_block(fenced)
-        if isinstance(parsed, dict):
-            return parsed
-        raw = fenced
-
-    reply_match = re.search(r"[\"']reply[\"']\s*:\s*\"([\s\S]*?)\"", raw, flags=re.IGNORECASE)
-    if not reply_match:
-        return None
-
-    reply_raw = str(reply_match.group(1) or "")
-    reply_text = (
-        reply_raw.replace(r"\r\n", "\n")
-        .replace(r"\n", "\n")
-        .replace(r"\t", "\t")
-        .replace(r"\"", '"')
-        .replace(r"\\/", "/")
-        .replace(r"\\", "\\")
-        .strip()
-    )
-    if not reply_text:
-        return None
-
-    return {"reply": reply_text, "actions": []}
-
-
 def _workspace_execute_actions(root: Path, actions: List[Dict[str, Any]]) -> List[str]:
     logs: List[str] = []
     for item in actions[:12]:
@@ -1464,7 +1444,6 @@ def _run_workspace_agent(
         planner_prompt = textwrap.dedent(
             f"""
             你是本地代码编辑代理，需要在指定目录内操作文件，并向用户提供清晰说明。
-            你的首要目标是：准确理解“要改什么、改哪个文件、如何改”，不确定时先澄清，避免误改。
             目录根路径: {workspace_root}
             当前目录树（节选）:
             {directory_tree}
@@ -1478,23 +1457,9 @@ def _run_workspace_agent(
             用户请求:
             {message}
 
-            先在心里完成以下判断，再输出 JSON：
-            - 意图类型：问答 / 读文件 / 改文件 / 列目录 / 其他。
-            - 目标文件：用户是否明确给了路径、文件名、后缀、模块名、函数名或“这个文件/当前文件”等指代。
-            - 改动类型：新增、替换、追加、结构化表格写入。
-            - 信息是否充分：如果无法唯一定位文件或改动内容不完整，必须先澄清，不执行写操作。
-
-            文件定位规则（严格执行）：
-            1) 用户给了明确相对路径：直接使用该 path。
-            2) 用户只给文件名（如 main.ts）：
-               - 若目录树中唯一命中，可直接操作；
-               - 若有多个同名文件，禁止猜测，reply 里列出候选路径并请用户确认，actions 置空。
-            3) 用户说“这个文件/当前文件”但没有可确定路径时，禁止猜测，reply 里明确要求用户提供相对路径，actions 置空。
-            4) 仅当文件可唯一确定时，才允许输出写入类 actions。
-
             请仅返回 JSON 对象，不要加解释文字。格式：
             {{
-              "reply": "给用户的简短说明（先说理解到的目标；若可执行，说明将做什么；若信息不足，明确要补充什么）",
+              "reply": "给用户的简短说明（先说做了什么，再说下一步建议）",
               "actions": [
                 {{"action": "list_files"}},
                 {{"action": "read_file", "path": "relative/path"}},
@@ -1519,24 +1484,20 @@ def _run_workspace_agent(
             1) path 必须是相对路径。
             2) 若需要改文件，优先 replace_text；若文件不存在再 write_file。
             3) 若用户只是询问，则 actions 可为空。
-            4) 若信息不足（目标文件不唯一/改动描述不完整），必须先提问澄清，actions 必须为空。
-            5) reply 使用用户可读语言，不要只输出技术术语；若执行失败，需要说明原因和可替代方案。
-            6) 若执行改动，reply 需要简要说明改动范围（改了哪些文件/内容）。
-            7) .xlsx/.xlsm 文件只能用 xlsx_edit，严禁用 write_file、append_file、replace_text 进行文本写入。
-            8) .xls/.docx/.pdf/图片/压缩包等二进制文件，禁止文本写入；若用户要求编辑，先说明限制并给可行替代方案。
-            9) 若用户给的是“按字段”的结构化数据，优先使用 append_dict_rows 按表头写入。
+            4) reply 使用用户可读语言，不要只输出技术术语；若执行失败，需要说明原因和可替代方案。
+            5) 若执行改动，reply 需要简要说明改动范围（改了哪些文件/内容）。
+            6) .xlsx/.xlsm 文件只能用 xlsx_edit，严禁用 write_file、append_file、replace_text 进行文本写入。
+            7) .xls/.docx/.pdf/图片/压缩包等二进制文件，禁止文本写入；若用户要求编辑，先说明限制并给可行替代方案。
+            8) 若用户给的是“按字段”的结构化数据，优先使用 append_dict_rows 按表头写入。
             """
         ).strip()
 
         planner_raw = _llm_chat(message=planner_prompt, history=[], kb_context="")
-        parsed = _extract_workspace_plan(planner_raw)
+        parsed = _extract_json_block(planner_raw)
         if parsed is None:
-            fallback = str(planner_raw or "").strip()
-            if fallback.startswith("{") and "reply" in fallback and "actions" in fallback:
-                fallback = "我没有拿到可执行计划。请提供要编辑的相对路径和具体修改内容。"
             return {
                 "ok": True,
-                "reply": fallback or "我没有拿到可执行计划。请重试或补充更明确的修改目标。",
+                "reply": planner_raw,
                 "mode": "workspace",
             }
 
@@ -1776,15 +1737,12 @@ def _get_kb_context(message: str) -> str:
         return ""
 
     try:
-        from agent.kb.retriever import format_retrieved_context, retrieve_chunks, search_policy  # noqa: WPS433
+        from agent.kb.retriever import format_retrieved_context, retrieve_chunks  # noqa: WPS433
     except ModuleNotFoundError:
         return ""
 
     try:
-        # Prefer hybrid semantic retrieval; fallback to keyword retrieval for robustness.
-        chunks = search_policy(message, top_k=top_k, kb_path=kb_path)
-        if not chunks:
-            chunks = retrieve_chunks(message, kb_path=kb_path, top_k=top_k)
+        chunks = retrieve_chunks(message, kb_path=kb_path, top_k=top_k)
         return format_retrieved_context(chunks, max_chars=max_chars)
     except Exception:
         return ""

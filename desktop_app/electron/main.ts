@@ -1,5 +1,5 @@
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -174,6 +174,24 @@ function buildChatEnv(baseEnv: NodeJS.ProcessEnv, config: LlmConfig): NodeJS.Pro
     nextEnv.AGENT_LLM_API_KEY = config.apiKey;
   } else {
     delete nextEnv.AGENT_LLM_API_KEY;
+  }
+
+  // Ensure SSL certificate bundle is provided to Python subprocesses.
+  if (!nextEnv.SSL_CERT_FILE) {
+    try {
+      const python = resolvePythonExecutable();
+      if (python) {
+        const res = spawnSync(python, ["-m", "certifi"], { encoding: "utf8" });
+        const certPath = (res.stdout || "").trim();
+        if (certPath) {
+          nextEnv.SSL_CERT_FILE = certPath;
+          nextEnv.REQUESTS_CA_BUNDLE = certPath;
+          nextEnv.CURL_CA_BUNDLE = certPath;
+        }
+      }
+    } catch {
+      // ignore failures — fallback to existing env
+    }
   }
 
   return nextEnv;

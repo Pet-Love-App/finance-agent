@@ -351,6 +351,15 @@ class TestDocStorageStatsTools(unittest.TestCase):
             save_res = save_record(record, db_path=db_path)
             self.assertTrue(save_res.success)
 
+            # Test distinct files are generated
+            final_res1 = generate_final_account({"by_month": [], "total_amount": 0.0}, output_dir=tmp)
+            final_res2 = generate_final_account({"by_month": [], "total_amount": 0.0}, output_dir=tmp)
+            self.assertNotEqual(final_res1.data["final_account_path"], final_res2.data["final_account_path"])
+
+            budget_res1 = generate_budget({"growth_rate": 0}, output_dir=tmp)
+            budget_res2 = generate_budget({"growth_rate": 0}, output_dir=tmp)
+            self.assertNotEqual(budget_res1.data["budget_path"], budget_res2.data["budget_path"])
+
             load_res = load_records({}, db_path=db_path)
             self.assertTrue(load_res.success)
             self.assertGreaterEqual(len(load_res.data["records"]), 1)

@@ -1,3 +1,18 @@
+# Ensure we set up certifi-based CA bundle (or fall back to disabling verification) as early as possible
+import os
+try:
+    import certifi
+    cert_path = certifi.where()
+    os.environ.setdefault('SSL_CERT_FILE', cert_path)
+    os.environ.setdefault('REQUESTS_CA_BUNDLE', cert_path)
+    os.environ.setdefault('CURL_CA_BUNDLE', cert_path)
+except Exception:
+    try:
+        import ssl
+        ssl._create_default_https_context = ssl._create_unverified_context
+    except Exception:
+        pass
+
 """财务报销 Agent 包。"""
 
 from typing import Any

@@ -58,7 +58,7 @@
       "profile": {}
     },
     "workspace:7505d64a54e061b7": {
-      "updated_at": "2026-04-08T00:00:22.377662",
+      "updated_at": "2026-04-09T10:36:28.858087",
       "short_term": [
         {
           "role": "user",
@@ -75,6 +75,63 @@
         {
           "role": "assistant",
           "content": "任务已完成：reimburse"
+        },
+        {
+          "id": "441d2f3c97cd42a3a2b8a916acda8001",
+          "role": "user",
+          "content": "执行任务",
+          "ts": "2026-04-09T10:27:54.327101",
+          "importance": 0.2
+        },
+        {
+          "id": "c61f6064153e4305a2a83d86e76a8f8c",
+          "role": "assistant",
+          "content": "任务已完成：budget",
+          "ts": "2026-04-09T10:27:54.327101",
+          "importance": 0.2
+        },
+        {
+          "id": "3f9fb320ade549d184ad93755924f7bc",
+          "role": "user",
+          "content": "执行任务",
+          "ts": "2026-04-09T10:36:28.856414",
+          "importance": 0.2
+        },
+        {
+          "id": "daafe82cce6c432987726038811a876b",
+          "role": "assistant",
+          "content": "任务已完成：budget",
+          "ts": "2026-04-09T10:36:28.856414",
+          "importance": 0.2
+        }
+      ],
+      "long_term": [],
+      "rolling_summary": "",
+      "profile": {}
+    },
+    "workspace:28aa0529c81125d3": {
+      "updated_at": "2026-04-09T00:18:47.663869",
+      "short_term": [
+        {
+          "id": "c9c2b53818c44035814fd2546c97237c",
+          "role": "user",
+          "content": "hi",
+          "ts": "2026-04-09T00:18:47.661782",
+          "importance": 0.2
+        },
+        {
+          "id": "6b402193ce0d4343b9561c7c2f30f5db",
+          "role": "user",
+          "content": "hi",
+          "ts": "2026-04-09T00:18:47.661782",
+          "importance": 0.2
+        },
+        {
+          "id": "99502b1175e04b039acb37a5b6051565",
+          "role": "assistant",
+          "content": "你好！我是你的企业报销与办公任务助手。我可以帮你处理报销流程、解答审计规则，或者协助你编辑项目中的文件。请告诉我你想做什么？",
+          "ts": "2026-04-09T00:18:47.661782",
+          "importance": 0.5
         }
       ],
       "long_term": [],
