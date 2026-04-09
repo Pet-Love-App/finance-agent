@@ -5,8 +5,11 @@ import unittest
 from pathlib import Path
 
 from agent.graphs.intent import intent_node, route_by_task
+from agent.graphs.subgraphs.budget import route_after_load_final_data
 from agent.graphs.subgraphs.final_account import final_generate_node
 from agent.graphs.subgraphs.file_edit import file_edit_gateway_node
+from agent.graphs.subgraphs.final_account import route_after_data_clean, route_after_load_records
+from agent.graphs.subgraphs.reimburse import route_after_extract, route_after_scan
 
 
 class TestSupervisorRouter(unittest.TestCase):
@@ -38,6 +41,35 @@ class TestSupervisorRouter(unittest.TestCase):
     def test_route_by_task_file_edit(self) -> None:
         self.assertEqual(route_by_task({"task_type": "file_edit"}), "FileEditStartNode")
 
+    def test_route_by_task_clarification_guard(self) -> None:
+        route = route_by_task(
+            {
+                "task_type": "reimburse",
+                "route_decision": {"clarification_required": True},
+            }
+        )
+        self.assertEqual(route, "IntentClarifyNode")
+
+    def test_route_by_task_confirmation_guard(self) -> None:
+        route = route_by_task(
+            {
+                "task_type": "file_edit",
+                "payload": {"policy": {"confirmed": False}},
+                "route_decision": {"requires_confirmation": True},
+            }
+        )
+        self.assertEqual(route, "IntentConfirmNode")
+
+    def test_intent_node_injects_confirmation_policy(self) -> None:
+        state = {
+            "payload": {"query": "帮我修改文件并写入内容"},
+            "task_progress": [],
+        }
+        updated = intent_node(state)
+        policy = updated.get("payload", {}).get("policy", {})
+        self.assertTrue(bool(policy.get("requires_confirmation")))
+        self.assertFalse(bool(policy.get("confirmed")))
+
     def test_file_edit_gateway_node(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -64,6 +96,36 @@ class TestSupervisorRouter(unittest.TestCase):
             target = root / "notes" / "result.txt"
             self.assertTrue(target.exists())
             self.assertEqual(target.read_text(encoding="utf-8"), "hello gateway")
+
+    def test_file_edit_gateway_uses_route_decision_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            state = {
+                "payload": {
+                    "workspace_root": str(root),
+                    "operation_id": "op-test-2",
+                    "actions": [
+                        {
+                            "action": "write_file",
+                            "path": "notes/pending.txt",
+                            "content": "blocked",
+                        }
+                    ],
+                },
+                "route_decision": {"requires_confirmation": True},
+                "task_progress": [],
+                "errors": [],
+            }
+            updated = file_edit_gateway_node(state)
+            result = updated.get("result", {})
+            self.assertEqual(result.get("status"), "pending_confirmation")
+
+    def test_fail_fast_routes(self) -> None:
+        self.assertEqual(route_after_scan({"errors": ["scan failed"], "files": []}), "ReimburseFailNode")
+        self.assertEqual(route_after_extract({"errors": ["extract failed"], "merged_text": ""}), "ReimburseFailNode")
+        self.assertEqual(route_after_load_records({"errors": ["db failed"], "records": []}), "FinalFailNode")
+        self.assertEqual(route_after_data_clean({"errors": ["clean failed"], "records": []}), "FinalFailNode")
+        self.assertEqual(route_after_load_final_data({"errors": ["load failed"], "aggregate": {}}), "BudgetFailNode")
 
     def test_recon_result_with_structured_differences(self) -> None:
         state = {

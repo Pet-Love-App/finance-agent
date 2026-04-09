@@ -1801,43 +1801,16 @@ def _route_request_mode(message: str, payload: Dict[str, Any]) -> Tuple[str, Opt
     if override_mode == "task":
         return "task", task_type, task_payload
     if override_mode == "workspace":
-        return "task", "file_edit", payload
+        enriched_payload = {**payload, "workspace_mode": True}
+        return "task", "auto", enriched_payload
     if override_mode == "chat":
         return "task", "auto", payload
 
     if task_type:
         return "task", task_type, task_payload
 
-    supervisor_enabled = payload.get("supervisor_enabled", True)
-    supervisor_enabled = str(supervisor_enabled).strip().lower() not in {"0", "false", "off", "no"}
-    if supervisor_enabled:
-        inferred_task, confidence, reason_codes = _supervisor_infer_task(message, payload)
-        if inferred_task == "file_edit" and confidence >= 0.8:
-            enriched_payload = {
-                **payload,
-                "route_decision": {
-                    "task_type": inferred_task,
-                    "confidence": round(confidence, 3),
-                    "reason_codes": reason_codes,
-                },
-            }
-            return "task", "file_edit", enriched_payload
-        if inferred_task and confidence >= 0.84:
-            enriched_payload = {
-                **payload,
-                "route_decision": {
-                    "task_type": inferred_task,
-                    "confidence": round(confidence, 3),
-                    "reason_codes": reason_codes,
-                },
-            }
-            return "task", inferred_task, enriched_payload
-
-    workspace_mode = bool(payload.get("workspace_mode", False))
-    workspace_task = str(payload.get("workspace_task", "")).strip()
-    if workspace_mode and (workspace_task or _looks_like_workspace_intent(message)):
-        return "task", "file_edit", payload
-
+    # Unify routing: implicit requests always enter the graph as auto tasks,
+    # then IntentNode becomes the only task-type decision source.
     return "task", "auto", payload
 
 
@@ -1862,7 +1835,14 @@ def _prepare_task_payload_for_dispatch(
         merged_payload["workspace_dir"] = workspace_dir
         merged_payload.setdefault("workspace_root", workspace_dir)
 
-    if task_type == "file_edit":
+    referenced_files = _referenced_file_paths(merged_payload)
+    should_prepare_file_actions = (
+        task_type == "file_edit"
+        or bool(merged_payload.get("workspace_mode", False))
+        or len(referenced_files) > 0
+        or _looks_like_workspace_intent(message)
+    )
+    if should_prepare_file_actions:
         effective_message = _resolve_message_with_referenced_file(message, merged_payload)
         if not isinstance(merged_payload.get("actions"), list) or not merged_payload.get("actions"):
             command_plan = _build_direct_plan_from_single_reference(message, merged_payload)
@@ -1877,7 +1857,7 @@ def _prepare_task_payload_for_dispatch(
         if not isinstance(policy, dict):
             policy = {}
         if "requires_confirmation" not in policy:
-            policy["requires_confirmation"] = False
+            policy["requires_confirmation"] = True
         merged_payload["policy"] = policy
 
     return merged_payload

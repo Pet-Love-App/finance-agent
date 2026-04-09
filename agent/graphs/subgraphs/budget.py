@@ -12,6 +12,8 @@ def budget_start_node(state: AppState) -> AppState:
 def route_after_load_final_data(state: AppState) -> str:
     payload = state.get("payload", {})
     aggregate = state.get("aggregate", {})
+    if state.get("errors") and not aggregate:
+        return "BudgetFailNode"
     skip_calculate_when_empty = get_bool_policy(payload, "budget_skip_calculate_when_empty", True)
     if aggregate:
         return "BudgetCalculateNode"
@@ -58,4 +60,17 @@ def budget_generate_node(state: AppState) -> AppState:
         },
         "errors": errors,
         "task_progress": state.get("task_progress", []) + [{"step": "budget_generate", "tool_name": "generate_budget/generate_report"}],
+    }
+
+
+def budget_fail_node(state: AppState) -> AppState:
+    errors = state.get("errors", [])
+    return {
+        "result": {
+            "type": "budget",
+            "status": "failed",
+            "errors": errors,
+        },
+        "errors": errors,
+        "task_progress": state.get("task_progress", []) + [{"step": "budget_fail", "tool_name": "fail_fast_guard"}],
     }

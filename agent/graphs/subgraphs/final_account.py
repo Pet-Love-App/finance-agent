@@ -14,6 +14,8 @@ def final_start_node(state: AppState) -> AppState:
 def route_after_load_records(state: AppState) -> str:
     payload = state.get("payload", {})
     records = state.get("records", [])
+    if state.get("errors") and not records:
+        return "FinalFailNode"
     generate_when_empty = get_bool_policy(payload, "final_generate_when_empty", True)
     if records:
         return "DataCleanNode"
@@ -23,6 +25,8 @@ def route_after_load_records(state: AppState) -> str:
 def route_after_data_clean(state: AppState) -> str:
     payload = state.get("payload", {})
     records = state.get("records", [])
+    if state.get("errors") and not records:
+        return "FinalFailNode"
     generate_when_empty = get_bool_policy(payload, "final_generate_when_empty", True)
     if records:
         return "DataAggregateNode"
@@ -261,4 +265,17 @@ def final_generate_node(state: AppState) -> AppState:
         },
         "errors": errors,
         "task_progress": state.get("task_progress", []) + [{"step": "final_generate", "tool_name": "generate_final_account"}],
+    }
+
+
+def final_fail_node(state: AppState) -> AppState:
+    errors = state.get("errors", [])
+    return {
+        "result": {
+            "type": "final_account",
+            "status": "failed",
+            "errors": errors,
+        },
+        "errors": errors,
+        "task_progress": state.get("task_progress", []) + [{"step": "final_fail", "tool_name": "fail_fast_guard"}],
     }

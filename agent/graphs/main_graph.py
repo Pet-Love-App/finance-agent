@@ -4,10 +4,11 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from agent.graphs.intent import route_by_task, intent_node
+from agent.graphs.intent import intent_clarify_node, intent_confirm_node, route_by_task, intent_node
 from agent.graphs.state import AppState
 from agent.graphs.subgraphs.budget import (
     budget_calculate_node,
+    budget_fail_node,
     budget_generate_node,
     budget_start_node,
     load_final_data_node,
@@ -17,6 +18,7 @@ from agent.graphs.subgraphs.file_edit import file_edit_gateway_node, file_edit_s
 from agent.graphs.subgraphs.final_account import (
     aggregate_node,
     data_clean_node,
+    final_fail_node,
     final_generate_node,
     final_start_node,
     load_records_node,
@@ -35,6 +37,7 @@ from agent.graphs.subgraphs.reimburse import (
     route_after_extract,
     route_after_rule_check,
     route_after_scan,
+    reimburse_fail_node,
     rule_check_node,
     save_record_node,
     scan_file_node,
@@ -46,6 +49,8 @@ def build_main_graph() -> Any:
     graph = StateGraph(AppState)
 
     graph.add_node("IntentNode", intent_node)
+    graph.add_node("IntentClarifyNode", intent_clarify_node)
+    graph.add_node("IntentConfirmNode", intent_confirm_node)
 
     graph.add_node("ReimburseStartNode", reimburse_start_node)
     graph.add_node("ScanFileNode", scan_file_node)
@@ -57,6 +62,7 @@ def build_main_graph() -> Any:
     graph.add_node("GenDocNode", gen_doc_node)
     graph.add_node("GenMailNode", gen_mail_node)
     graph.add_node("SaveRecordNode", save_record_node)
+    graph.add_node("ReimburseFailNode", reimburse_fail_node)
 
     graph.add_node("QAStartNode", qa_start_node)
     graph.add_node("QuestionUnderstandNode", question_understand_node)
@@ -68,11 +74,13 @@ def build_main_graph() -> Any:
     graph.add_node("DataCleanNode", data_clean_node)
     graph.add_node("DataAggregateNode", aggregate_node)
     graph.add_node("FinalGenerateNode", final_generate_node)
+    graph.add_node("FinalFailNode", final_fail_node)
 
     graph.add_node("BudgetStartNode", budget_start_node)
     graph.add_node("LoadFinalDataNode", load_final_data_node)
     graph.add_node("BudgetCalculateNode", budget_calculate_node)
     graph.add_node("BudgetGenerateNode", budget_generate_node)
+    graph.add_node("BudgetFailNode", budget_fail_node)
     graph.add_node("SandboxStartNode", sandbox_start_node)
     graph.add_node("SandboxExecuteNode", sandbox_execute_node)
     graph.add_node("FileEditStartNode", file_edit_start_node)
@@ -83,6 +91,8 @@ def build_main_graph() -> Any:
         "IntentNode",
         route_by_task,
         {
+            "IntentClarifyNode": "IntentClarifyNode",
+            "IntentConfirmNode": "IntentConfirmNode",
             "ReimburseStartNode": "ReimburseStartNode",
             "QAStartNode": "QAStartNode",
             "FinalStartNode": "FinalStartNode",
@@ -91,6 +101,8 @@ def build_main_graph() -> Any:
             "FileEditStartNode": "FileEditStartNode",
         },
     )
+    graph.add_edge("IntentClarifyNode", END)
+    graph.add_edge("IntentConfirmNode", END)
 
     graph.add_edge("ReimburseStartNode", "ScanFileNode")
     graph.add_conditional_edges(
@@ -99,6 +111,7 @@ def build_main_graph() -> Any:
         {
             "ClassifyFileNode": "ClassifyFileNode",
             "SaveRecordNode": "SaveRecordNode",
+            "ReimburseFailNode": "ReimburseFailNode",
         },
     )
     graph.add_edge("ClassifyFileNode", "ExtractNode")
@@ -108,6 +121,7 @@ def build_main_graph() -> Any:
         {
             "InvoiceExtractNode": "InvoiceExtractNode",
             "ActivityParseNode": "ActivityParseNode",
+            "ReimburseFailNode": "ReimburseFailNode",
         },
     )
     graph.add_edge("InvoiceExtractNode", "ActivityParseNode")
@@ -123,6 +137,7 @@ def build_main_graph() -> Any:
     graph.add_edge("GenDocNode", "GenMailNode")
     graph.add_edge("GenMailNode", "SaveRecordNode")
     graph.add_edge("SaveRecordNode", END)
+    graph.add_edge("ReimburseFailNode", END)
 
     graph.add_edge("QAStartNode", "QuestionUnderstandNode")
     graph.add_conditional_edges(
@@ -143,6 +158,7 @@ def build_main_graph() -> Any:
         {
             "DataCleanNode": "DataCleanNode",
             "FinalGenerateNode": "FinalGenerateNode",
+            "FinalFailNode": "FinalFailNode",
         },
     )
     graph.add_conditional_edges(
@@ -151,10 +167,12 @@ def build_main_graph() -> Any:
         {
             "DataAggregateNode": "DataAggregateNode",
             "FinalGenerateNode": "FinalGenerateNode",
+            "FinalFailNode": "FinalFailNode",
         },
     )
     graph.add_edge("DataAggregateNode", "FinalGenerateNode")
     graph.add_edge("FinalGenerateNode", END)
+    graph.add_edge("FinalFailNode", END)
 
     graph.add_edge("BudgetStartNode", "LoadFinalDataNode")
     graph.add_conditional_edges(
@@ -163,10 +181,12 @@ def build_main_graph() -> Any:
         {
             "BudgetCalculateNode": "BudgetCalculateNode",
             "BudgetGenerateNode": "BudgetGenerateNode",
+            "BudgetFailNode": "BudgetFailNode",
         },
     )
     graph.add_edge("BudgetCalculateNode", "BudgetGenerateNode")
     graph.add_edge("BudgetGenerateNode", END)
+    graph.add_edge("BudgetFailNode", END)
 
     graph.add_edge("SandboxStartNode", "SandboxExecuteNode")
     graph.add_edge("SandboxExecuteNode", END)

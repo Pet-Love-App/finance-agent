@@ -24,11 +24,15 @@ def _append_error(state: AppState, message: str) -> Dict[str, List[str]]:
 
 
 def route_after_scan(state: AppState) -> str:
+    if state.get("errors"):
+        return "ReimburseFailNode"
     files = state.get("files", [])
     return "ClassifyFileNode" if files else "SaveRecordNode"
 
 
 def route_after_extract(state: AppState) -> str:
+    if state.get("errors"):
+        return "ReimburseFailNode"
     merged_text = str(state.get("merged_text", "")).strip()
     return "InvoiceExtractNode" if merged_text else "ActivityParseNode"
 
@@ -205,4 +209,18 @@ def save_record_node(state: AppState) -> AppState:
         "result": result,
         "errors": state.get("errors", []) + ([save_res.error] if save_res.error else []),
         "task_progress": state.get("task_progress", []) + [{"step": "save", "tool_name": "save_record"}],
+    }
+
+
+def reimburse_fail_node(state: AppState) -> AppState:
+    errors = state.get("errors", [])
+    return {
+        "result": {
+            "type": "reimburse",
+            "status": "failed",
+            "errors": errors,
+            "outputs": state.get("outputs", {}),
+        },
+        "errors": errors,
+        "task_progress": state.get("task_progress", []) + [{"step": "reimburse_fail", "tool_name": "fail_fast_guard"}],
     }

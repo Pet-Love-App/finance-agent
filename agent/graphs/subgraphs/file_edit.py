@@ -128,7 +128,10 @@ def _execute_actions(root: Path, actions: List[Dict[str, Any]]) -> Tuple[List[st
                     ws.title = sheet_name
 
                 set_cells = item.get("set_cells", [])
+                append_rows = item.get("append_rows", [])
+                append_dict_rows = item.get("append_dict_rows", [])
                 set_count = 0
+                append_count = 0
                 if isinstance(set_cells, list):
                     for cell_item in set_cells:
                         if not isinstance(cell_item, dict):
@@ -138,12 +141,52 @@ def _execute_actions(root: Path, actions: List[Dict[str, Any]]) -> Tuple[List[st
                             continue
                         ws[cell_ref] = cell_item.get("value")
                         set_count += 1
-                if set_count == 0:
-                    raise ValueError("xlsx_edit 未包含有效 set_cells")
+
+                if isinstance(append_rows, list):
+                    for row in append_rows:
+                        if not isinstance(row, list):
+                            continue
+                        ws.append(row)
+                        append_count += 1
+
+                if isinstance(append_dict_rows, list):
+                    for row_dict in append_dict_rows:
+                        if not isinstance(row_dict, dict) or not row_dict:
+                            continue
+                        header_map: Dict[str, int] = {}
+                        for col in range(1, ws.max_column + 1):
+                            header_val = ws.cell(row=1, column=col).value
+                            key = str(header_val).strip() if header_val is not None else ""
+                            if key:
+                                header_map[key] = col
+                        if not header_map:
+                            header_keys = list(row_dict.keys())
+                            for idx, key in enumerate(header_keys, start=1):
+                                ws.cell(row=1, column=idx, value=key)
+                                header_map[str(key)] = idx
+                        row_idx = ws.max_row + 1
+                        for key, value in row_dict.items():
+                            norm_key = str(key).strip()
+                            if not norm_key:
+                                continue
+                            if norm_key not in header_map:
+                                next_col = ws.max_column + 1
+                                ws.cell(row=1, column=next_col, value=norm_key)
+                                header_map[norm_key] = next_col
+                            ws.cell(row=row_idx, column=header_map[norm_key], value=value)
+                        append_count += 1
+
+                if set_count == 0 and append_count == 0:
+                    raise ValueError("xlsx_edit 未包含有效 set_cells/append_rows/append_dict_rows")
 
                 target.parent.mkdir(parents=True, exist_ok=True)
                 workbook.save(target)
-                _append_changeset(changeset, rel, action, f"sheet={ws.title}, set_cells={set_count}")
+                _append_changeset(
+                    changeset,
+                    rel,
+                    action,
+                    f"sheet={ws.title}, set_cells={set_count}, append_rows={append_count}",
+                )
                 logs.append(f"已更新 Excel: {rel}")
                 continue
 
@@ -160,7 +203,13 @@ def file_edit_gateway_node(state: AppState) -> AppState:
     actions = payload.get("actions", [])
     operation_id = str(payload.get("operation_id", "")).strip() or "op-auto"
     policy = payload.get("policy", {}) if isinstance(payload.get("policy", {}), dict) else {}
-    requires_confirmation = bool(policy.get("requires_confirmation", False))
+    route_decision = state.get("route_decision", {}) if isinstance(state.get("route_decision", {}), dict) else {}
+    requires_confirmation = bool(
+        policy.get(
+            "requires_confirmation",
+            route_decision.get("requires_confirmation", False),
+        )
+    )
     user_confirmed = bool(policy.get("confirmed", False))
 
     errors = list(state.get("errors", []))
@@ -227,4 +276,3 @@ def file_edit_gateway_node(state: AppState) -> AppState:
             {"step": "file_edit_gateway", "tool_name": "FileToolGateway"},
         ],
     }
-
