@@ -14,6 +14,7 @@ from agent.graphs.subgraphs.final_account import final_generate_node
 from agent.graphs.subgraphs.file_edit import file_edit_gateway_node
 from agent.graphs.subgraphs.final_account import route_after_data_clean, route_after_load_records
 from agent.graphs.subgraphs.reimburse import route_after_extract, route_after_scan
+from agent.graphs.task_registry import get_start_node_for_runtime_task, normalize_task_alias
 
 
 class TestSupervisorRouter(unittest.TestCase):
@@ -111,6 +112,12 @@ class TestSupervisorRouter(unittest.TestCase):
     def test_route_by_task_file_edit(self) -> None:
         self.assertEqual(route_by_task({"task_type": "file_edit"}), "FileEditStartNode")
 
+    def test_task_registry_alias_and_runtime_start_mapping(self) -> None:
+        self.assertEqual(normalize_task_alias("t4_budget_fill"), "budget_fill")
+        self.assertEqual(normalize_task_alias("T6_FILE_EDIT"), "file_edit")
+        self.assertEqual(get_start_node_for_runtime_task("budget"), "BudgetStartNode")
+        self.assertEqual(get_start_node_for_runtime_task("final_account"), "FinalStartNode")
+
     def test_route_by_task_clarification_guard(self) -> None:
         route = route_by_task(
             {
@@ -171,6 +178,21 @@ class TestSupervisorRouter(unittest.TestCase):
                 self.assertEqual(route_decision.get("task_type"), "file_edit")
                 self.assertNotEqual(route_decision.get("task_type"), "qa")
                 self.assertIn(expected_reason, route_decision.get("reason_codes", []))
+
+    def test_intent_node_prefers_action_plan_for_file_edit(self) -> None:
+        updated = intent_node(
+            {
+                "payload": {
+                    "query": "开始执行结构化任务",
+                    "actions": [{"action": "organize_reimbursement_package", "package_name": "x.zip"}],
+                },
+                "task_progress": [],
+            }
+        )
+        self.assertEqual(updated.get("task_type"), "file_edit")
+        route_decision = updated.get("route_decision", {})
+        self.assertEqual(route_decision.get("task_type"), "file_edit")
+        self.assertIn("R605_ACTION_PLAN", route_decision.get("reason_codes", []))
 
     def test_file_edit_gateway_node(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

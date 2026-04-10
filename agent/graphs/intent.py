@@ -3,16 +3,20 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 from agent.graphs.names import (
-    NODE_BUDGET_START,
-    NODE_FILE_EDIT_START,
-    NODE_FINAL_START,
     NODE_INTENT_CLARIFY,
     NODE_INTENT_CONFIRM,
-    NODE_QA_START,
-    NODE_REIMBURSE_START,
-    NODE_SANDBOX_START,
 )
 from agent.graphs.state import AppState
+from agent.graphs.task_registry import (
+    TASK_BUDGET_FILL,
+    TASK_FILE_EDIT,
+    TASK_FINAL_FILL,
+    TASK_MATERIAL,
+    TASK_PROFILES,
+    get_start_node_for_runtime_task,
+    get_task_profile,
+    normalize_task_alias,
+)
 
 
 TASK_QA = "qa"
@@ -20,12 +24,7 @@ TASK_REIMBURSE = "reimburse"
 TASK_FINAL = "final_account"
 TASK_BUDGET = "budget"
 TASK_SANDBOX = "sandbox_exec"
-TASK_FILE_EDIT = "file_edit"
-
 TASK_RECON = "recon"
-TASK_MATERIAL = "material"
-TASK_BUDGET_FILL = "budget_fill"
-TASK_FINAL_FILL = "final_fill"
 HIGH_RISK_FILE_ACTIONS = {"write_file", "append_file", "replace_text", "xlsx_edit", "material_package"}
 
 
@@ -43,28 +42,7 @@ def _to_bool(raw: Any) -> bool:
 
 
 def _normalize_explicit_task(task_type: str) -> str:
-    text = str(task_type or "").strip().lower()
-    if text in {"", "auto"}:
-        return ""
-    alias_map = {
-        "t1_qa": TASK_QA,
-        "t2_recon": TASK_RECON,
-        "t3_material": TASK_MATERIAL,
-        "t4_budget_fill": TASK_BUDGET_FILL,
-        "t5_final_fill": TASK_FINAL_FILL,
-        "t6_file_edit": TASK_FILE_EDIT,
-        "qa": TASK_QA,
-        "reimburse": TASK_REIMBURSE,
-        "final_account": TASK_FINAL,
-        "budget": TASK_BUDGET,
-        "sandbox_exec": TASK_SANDBOX,
-        "file_edit": TASK_FILE_EDIT,
-        "recon": TASK_RECON,
-        "material": TASK_MATERIAL,
-        "budget_fill": TASK_BUDGET_FILL,
-        "final_fill": TASK_FINAL_FILL,
-    }
-    return alias_map.get(text, "")
+    return normalize_task_alias(task_type)
 
 
 def _classify_task(query: str, payload: Dict[str, Any]) -> Tuple[str, float, List[str]]:
@@ -73,6 +51,23 @@ def _classify_task(query: str, payload: Dict[str, Any]) -> Tuple[str, float, Lis
     if not text:
         _append_reason(reasons, "R800_EMPTY_QUERY")
         return TASK_REIMBURSE, 0.52, reasons
+
+    actions = payload.get("actions", [])
+    safe_actions = [item for item in actions if isinstance(item, dict)] if isinstance(actions, list) else []
+    if safe_actions:
+        action_names = {str(item.get("action", "")).strip() for item in safe_actions}
+        if action_names.intersection(
+            {
+                "read_file",
+                "write_file",
+                "append_file",
+                "replace_text",
+                "xlsx_edit",
+                "organize_reimbursement_package",
+            }
+        ):
+            _append_reason(reasons, "R605_ACTION_PLAN")
+            return TASK_FILE_EDIT, 0.96, reasons
 
     if any(key in text for key in ("xlsx_edit", "replace_text", "write_file", "append_file")):
         _append_reason(reasons, "R601_TOOL_ACTION")
@@ -147,22 +142,6 @@ def _classify_task(query: str, payload: Dict[str, Any]) -> Tuple[str, float, Lis
     return TASK_REIMBURSE, 0.56, reasons
 
 
-def _to_runtime_task(task_type: str) -> str:
-    mapping = {
-        TASK_QA: TASK_QA,
-        TASK_REIMBURSE: TASK_REIMBURSE,
-        TASK_FINAL: TASK_FINAL,
-        TASK_BUDGET: TASK_BUDGET,
-        TASK_SANDBOX: TASK_SANDBOX,
-        TASK_FILE_EDIT: TASK_FILE_EDIT,
-        TASK_RECON: TASK_FINAL,
-        TASK_MATERIAL: TASK_REIMBURSE,
-        TASK_BUDGET_FILL: TASK_BUDGET,
-        TASK_FINAL_FILL: TASK_FINAL,
-    }
-    return mapping.get(task_type, TASK_REIMBURSE)
-
-
 def _with_confirmation_policy(payload: Dict[str, Any], *, requires_confirmation: bool) -> Dict[str, Any]:
     policy = payload.get("policy", {})
     if not isinstance(policy, dict):
@@ -187,9 +166,10 @@ def intent_node(state: AppState) -> AppState:
     payload: Dict[str, Any] = state.get("payload", {})
     explicit_task = _normalize_explicit_task(str(state.get("task_type", "")).strip().lower())
     if explicit_task:
-        runtime_task = _to_runtime_task(explicit_task)
-        risk_level = "high" if explicit_task in {TASK_FILE_EDIT, TASK_BUDGET_FILL, TASK_FINAL_FILL} else "medium"
-        requires_confirmation = explicit_task in {TASK_FILE_EDIT, TASK_BUDGET_FILL, TASK_FINAL_FILL}
+        profile = get_task_profile(explicit_task) or TASK_PROFILES[TASK_REIMBURSE]
+        runtime_task = profile["runtime_task"]
+        risk_level = profile["risk_level"]
+        requires_confirmation = profile["requires_confirmation_by_default"]
         next_payload = _with_confirmation_policy(payload, requires_confirmation=requires_confirmation)
         return {
             "task_type": runtime_task,
@@ -208,8 +188,9 @@ def intent_node(state: AppState) -> AppState:
 
     query = str(payload.get("query", ""))
     inferred_task, confidence, reason_codes = _classify_task(query, payload)
-    runtime_task = _to_runtime_task(inferred_task)
-    is_write_task = inferred_task in {TASK_FILE_EDIT, TASK_BUDGET_FILL, TASK_FINAL_FILL, TASK_MATERIAL}
+    profile = get_task_profile(inferred_task) or TASK_PROFILES[TASK_REIMBURSE]
+    runtime_task = profile["runtime_task"]
+    is_write_task = bool(profile.get("is_write_task", False))
     risk_level = "high" if is_write_task else "medium"
     actions = payload.get("actions", [])
     safe_actions = [item for item in actions if isinstance(item, dict)] if isinstance(actions, list) else []
@@ -304,14 +285,4 @@ def route_by_task(state: AppState) -> str:
         return NODE_INTENT_CONFIRM
 
     task_type = str(state.get("task_type", TASK_REIMBURSE))
-    if task_type == TASK_QA:
-        return NODE_QA_START
-    if task_type == TASK_FINAL:
-        return NODE_FINAL_START
-    if task_type == TASK_BUDGET:
-        return NODE_BUDGET_START
-    if task_type == TASK_SANDBOX:
-        return NODE_SANDBOX_START
-    if task_type == TASK_FILE_EDIT:
-        return NODE_FILE_EDIT_START
-    return NODE_REIMBURSE_START
+    return get_start_node_for_runtime_task(task_type)

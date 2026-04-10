@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from agent.graphs.state import AppState
+from agent.tools.reimbursement_package import prepare_reimbursement_package
 
 
 TEXT_BLOCKED_SUFFIXES = {
@@ -49,6 +50,8 @@ def _safe_target(root: Path, relative_path: str) -> Path:
 
 def _append_changeset(changeset: List[Dict[str, Any]], path: str, kind: str, summary: str) -> None:
     changeset.append({"path": path, "kind": kind, "summary": summary})
+
+
 
 
 def _execute_actions(root: Path, actions: List[Dict[str, Any]]) -> Tuple[List[str], List[Dict[str, Any]], List[str]]:
@@ -188,6 +191,15 @@ def _execute_actions(root: Path, actions: List[Dict[str, Any]]) -> Tuple[List[st
                     f"sheet={ws.title}, set_cells={set_count}, append_rows={append_count}",
                 )
                 logs.append(f"已更新 Excel: {rel}")
+                continue
+
+            if action == "organize_reimbursement_package":
+                package_name = str(item.get("package_name", "")).strip() or None
+                raw_options = item.get("options", {})
+                options = raw_options if isinstance(raw_options, dict) else {}
+                summary = prepare_reimbursement_package(root, package_name, options)
+                _append_changeset(changeset, package_name or "reimbursement_package.zip", action, summary)
+                logs.append(summary)
                 continue
 
             errors.append(f"未知动作: {action}")

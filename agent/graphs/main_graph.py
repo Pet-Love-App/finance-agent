@@ -54,6 +54,7 @@ from agent.graphs.spec import (
     REIMBURSE_SCAN_ROUTES,
 )
 from agent.graphs.state import AppState
+from agent.graphs.task_registry import TASK_PROFILES
 from agent.graphs.subgraphs.budget import (
     budget_calculate_node,
     budget_fail_node,
@@ -135,6 +136,7 @@ def _register_nodes(graph: StateGraph) -> None:
 
 
 def _connect_intent_layer(graph: StateGraph) -> None:
+    _validate_task_registry_contract()
     _validate_route_map(
         "intent",
         INTENT_ROUTES,
@@ -259,6 +261,13 @@ def _validate_route_map(
             missing = sorted(required_keys - route_keys)
             extras = sorted(route_keys - required_keys)
             raise ValueError(f"{route_name} route contract mismatch, missing={missing}, extras={extras}")
+
+
+def _validate_task_registry_contract() -> None:
+    start_nodes = {profile["start_node"] for profile in TASK_PROFILES.values()}
+    missing_targets = sorted(start_nodes - INTENT_ROUTE_TARGETS)
+    if missing_targets:
+        raise ValueError(f"task registry start nodes missing from intent targets: {missing_targets}")
 
 
 def build_main_graph() -> Any:

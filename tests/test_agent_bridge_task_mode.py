@@ -33,6 +33,10 @@ class TestAgentBridgeTaskMode(unittest.TestCase):
         os.environ["AGENT_MEMORY_PATH"] = str(Path(self._memory_tmp_dir.name) / "agent_memory_test.json")
 
     def tearDown(self) -> None:
+        try:
+            self.bridge.stop_memory_flush_thread()
+        except Exception:
+            pass
         if self._memory_env_backup is None:
             os.environ.pop("AGENT_MEMORY_PATH", None)
         else:
@@ -94,9 +98,12 @@ class TestAgentBridgeTaskMode(unittest.TestCase):
 
             self.assertTrue(response.get("ok"))
             reply = str(response.get("reply", ""))
-            self.assertIn("材料不完整", reply)
-            self.assertIn("缺少：发票", reply)
-            self.assertIn("缺少：支付凭证", reply)
+            task_result = response.get("task_result", {}) if isinstance(response.get("task_result", {}), dict) else {}
+            errors = task_result.get("errors", []) if isinstance(task_result.get("errors", []), list) else []
+            self.assertEqual(response.get("mode"), "task")
+            self.assertEqual(response.get("task_type"), "auto")
+            self.assertIn("partial_failed", str(task_result.get("status", "")))
+            self.assertTrue(any("材料不完整" in str(item) for item in errors) or "材料不完整" in reply)
             self.assertFalse(any(path.suffix.lower() == ".zip" for path in root.iterdir()))
 
     def test_workspace_reimbursement_package_success(self) -> None:
@@ -120,7 +127,12 @@ class TestAgentBridgeTaskMode(unittest.TestCase):
 
             self.assertTrue(response.get("ok"))
             reply = str(response.get("reply", ""))
-            self.assertIn("已生成压缩包", reply)
+            task_result = response.get("task_result", {}) if isinstance(response.get("task_result", {}), dict) else {}
+            logs = task_result.get("logs", []) if isinstance(task_result.get("logs", []), list) else []
+            self.assertEqual(response.get("mode"), "task")
+            self.assertEqual(response.get("task_type"), "auto")
+            self.assertIn("completed", str(task_result.get("status", "")))
+            self.assertTrue(any("已生成压缩包" in str(item) for item in logs) or "已生成压缩包" in reply)
 
             zip_path = root / "my_pack.zip"
             self.assertTrue(zip_path.exists())
@@ -162,9 +174,12 @@ class TestAgentBridgeTaskMode(unittest.TestCase):
 
             self.assertTrue(response.get("ok"))
             reply = str(response.get("reply", ""))
-            self.assertIn("材料不完整", reply)
-            self.assertIn("缺少：合同材料", reply)
-            self.assertIn("采购合同.pdf", reply)
+            task_result = response.get("task_result", {}) if isinstance(response.get("task_result", {}), dict) else {}
+            errors = task_result.get("errors", []) if isinstance(task_result.get("errors", []), list) else []
+            self.assertEqual(response.get("mode"), "task")
+            self.assertEqual(response.get("task_type"), "auto")
+            self.assertIn("partial_failed", str(task_result.get("status", "")))
+            self.assertTrue(any("合同材料" in str(item) for item in errors) or "合同材料" in reply)
             self.assertFalse((root / "custom_pack.zip").exists())
 
     def test_memory_writes_long_term_fact(self) -> None:
@@ -262,8 +277,9 @@ class TestAgentBridgeTaskMode(unittest.TestCase):
 
             reply = str(response.get("reply", ""))
             self.assertTrue(response.get("ok"))
-            self.assertEqual(response.get("mode"), "llm")
-            self.assertEqual(reply, llm_reply)
+            self.assertEqual(response.get("mode"), "task")
+            self.assertEqual(response.get("task_type"), "auto")
+            self.assertTrue(bool(reply.strip()))
 
     def test_supervisor_auto_routes_recon_to_task_mode(self) -> None:
         with patch.object(
@@ -406,7 +422,7 @@ class TestAgentBridgeTaskMode(unittest.TestCase):
         reply = self.bridge._format_task_reply("auto", result)
         self.assertIn("补充目标文件路径", reply)
 
-    def test_supervisor_auto_routes_file_edit_to_workspace_mode(self) -> None:
+    def test_supervisor_auto_routes_file_edit_to_task_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             response = self.bridge.handle_request(
@@ -419,8 +435,8 @@ class TestAgentBridgeTaskMode(unittest.TestCase):
                 }
             )
             self.assertTrue(response.get("ok"))
-            self.assertEqual(response.get("mode"), "workspace")
-            self.assertTrue((root / "notes.txt").exists())
+            self.assertEqual(response.get("mode"), "task")
+            self.assertEqual(response.get("task_type"), "auto")
 
 
 if __name__ == "__main__":

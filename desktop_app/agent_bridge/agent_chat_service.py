@@ -48,6 +48,9 @@ PROJECT_ROOT = _resolve_project_root()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from agent.graphs.task_registry import normalize_task_alias
+from agent.tools.reimbursement_package import prepare_reimbursement_package
+
 SYSTEM_PROMPT = (
     "你是企业报销与办公任务助手。"
     "请使用自然、友好、专业的中文回答，先理解用户真实目标，再给出结论。"
@@ -95,27 +98,6 @@ TEXT_EDIT_BLOCKED_SUFFIXES = {
 
 XLSX_EDIT_SUFFIXES = {".xlsx", ".xlsm"}
 HIGH_RISK_FILE_ACTIONS = {"write_file", "append_file", "replace_text", "xlsx_edit", "material_package"}
-
-DEFAULT_REIMBURSE_CATEGORY_KEYWORDS: Dict[str, Set[str]] = {
-    "报销单": {"报销单", "报销申请", "报销", "reimburse"},
-    "发票": {"发票", "invoice", "票据", "电子票"},
-    "支付凭证": {"支付", "付款", "转账", "流水", "回单", "payment"},
-    "费用明细": {"明细", "清单", "detail"},
-    "活动说明": {"活动说明", "情况说明", "说明", "通知", "邮件", "mail"},
-    "预算材料": {"预算", "budget"},
-    "决算材料": {"决算", "final", "结项"},
-    "签到材料": {"签到", "签名", "出席"},
-}
-
-DEFAULT_REQUIRED_CATEGORIES = ["报销单", "发票", "支付凭证", "费用明细"]
-
-DEFAULT_MISSING_SUGGESTIONS: Dict[str, str] = {
-    "报销单": "示例：报销单.xlsx / 报销申请表.docx",
-    "发票": "示例：发票1.pdf / 电子发票.png",
-    "支付凭证": "示例：支付回单.pdf / 转账截图.jpg",
-    "费用明细": "示例：费用明细.xlsx / 报销清单.csv",
-}
-
 
 DEFAULT_MEMORY_PATH = PROJECT_ROOT / "data" / "memory" / "agent_memory.json"
 DEFAULT_MEMORY_SHORT_TERM_LIMIT = 14
@@ -966,137 +948,12 @@ def _workspace_tree_text(root: Path, *, max_files: Optional[int] = None) -> str:
     return "\n".join(rows) if rows else "(空目录)"
 
 
-def _workspace_all_files(root: Path, *, max_files: int = 5000) -> List[Path]:
-    files: List[Path] = []
-    for current, dirs, names in os.walk(root):
-        dirs[:] = [d for d in dirs if d not in WORKSPACE_SKIP_DIRS and not d.startswith(".")]
-        for name in sorted(names):
-            if name.startswith("."):
-                continue
-            path = (Path(current) / name).resolve()
-            try:
-                path.relative_to(root)
-            except ValueError:
-                continue
-            files.append(path)
-            if len(files) >= max_files:
-                return files
-    return files
-
-
-def _match_keywords(text: str, keywords: Set[str]) -> bool:
-    lowered = text.lower()
-    return any(key.lower() in lowered for key in keywords)
-
-
-def _parse_reimburse_package_options(raw_options: Any) -> Tuple[Dict[str, Set[str]], List[str], Dict[str, str], bool]:
-    category_keywords: Dict[str, Set[str]] = {
-        key: set(values) for key, values in DEFAULT_REIMBURSE_CATEGORY_KEYWORDS.items()
-    }
-    required_categories = list(DEFAULT_REQUIRED_CATEGORIES)
-    suggestions = dict(DEFAULT_MISSING_SUGGESTIONS)
-    include_uncategorized = True
-
-    if not isinstance(raw_options, dict):
-        return category_keywords, required_categories, suggestions, include_uncategorized
-
-    custom_keywords = raw_options.get("category_keywords")
-    if isinstance(custom_keywords, dict):
-        for category, values in custom_keywords.items():
-            key = str(category).strip()
-            if not key:
-                continue
-            if isinstance(values, list):
-                words = {str(item).strip() for item in values if str(item).strip()}
-                if words:
-                    category_keywords[key] = words
-
-    custom_required = raw_options.get("required_categories")
-    if isinstance(custom_required, list):
-        normalized_required = [str(item).strip() for item in custom_required if str(item).strip()]
-        if normalized_required:
-            required_categories = normalized_required
-            for category in required_categories:
-                category_keywords.setdefault(category, {category})
-
-    custom_suggestions = raw_options.get("missing_suggestions")
-    if isinstance(custom_suggestions, dict):
-        for category, tip in custom_suggestions.items():
-            key = str(category).strip()
-            if not key:
-                continue
-            tip_text = str(tip).strip()
-            if tip_text:
-                suggestions[key] = tip_text
-
-    include_uncategorized = bool(raw_options.get("include_uncategorized", True))
-    return category_keywords, required_categories, suggestions, include_uncategorized
-
-
 def _workspace_prepare_reimbursement_package(
     root: Path,
     package_name: Optional[str] = None,
     options: Optional[Dict[str, Any]] = None,
 ) -> str:
-    all_files = _workspace_all_files(root)
-    if not all_files:
-        raise ValueError("目录为空，未找到可打包的材料。")
-
-    category_keywords, required_categories, suggestion_map, include_uncategorized = _parse_reimburse_package_options(
-        options or {}
-    )
-
-    category_files: Dict[str, List[Path]] = {key: [] for key in category_keywords.keys()}
-    uncategorized: List[Path] = []
-
-    for file_path in all_files:
-        filename = file_path.name
-        rel = str(file_path.relative_to(root)).replace("\\", "/")
-
-        # 跳过历史打包结果，避免把 zip 包再次打进新 zip。
-        if file_path.suffix.lower() == ".zip":
-            continue
-
-        matched = False
-        for category, keywords in category_keywords.items():
-            if _match_keywords(filename, keywords) or _match_keywords(rel, keywords):
-                category_files[category].append(file_path)
-                matched = True
-        if not matched:
-            uncategorized.append(file_path)
-
-    missing = [name for name in required_categories if not category_files.get(name)]
-    if missing:
-        details = "\n".join(f"- 缺少：{name}（{suggestion_map.get(name, '请补充对应材料')}）" for name in missing)
-        raise ValueError(f"检测到材料不完整，请先补齐后再打包：\n{details}")
-
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    raw_name = str(package_name or f"reimbursement_package_{timestamp}.zip").strip()
-    if not raw_name.lower().endswith(".zip"):
-        raw_name += ".zip"
-
-    output_zip = (root / raw_name).resolve()
-    try:
-        output_zip.relative_to(root)
-    except ValueError as exc:
-        raise ValueError("压缩包名称非法，请仅提供文件名，不要包含目录穿越路径。") from exc
-
-    with zipfile.ZipFile(output_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for category, files in category_files.items():
-            for file_path in files:
-                arcname = f"{category}/{file_path.name}"
-                zf.write(file_path, arcname=arcname)
-        if include_uncategorized:
-            for file_path in uncategorized:
-                arcname = f"其他材料/{file_path.name}"
-                zf.write(file_path, arcname=arcname)
-
-    total_count = sum(len(files) for files in category_files.values()) + (len(uncategorized) if include_uncategorized else 0)
-    summary_items = [f"{name} {len(category_files.get(name, []))} 份" for name in required_categories]
-    return (
-        f"已生成压缩包：{output_zip.name}（共 {total_count} 个文件）\n"
-        f"分类统计：{', '.join(summary_items)}"
-    )
+    return prepare_reimbursement_package(root=root, package_name=package_name, options=options or {})
 
 
 def _workspace_read(root: Path, relative_path: str) -> str:
@@ -1673,16 +1530,10 @@ def _run_workspace_agent(
 
 
 def _extract_task_request(message: str, payload: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, Any]]:
-    alias_map = {
-        "t1_qa": "qa",
-        "t2_recon": "recon",
-        "t3_material": "reimburse",
-        "t4_budget_fill": "budget",
-        "t5_final_fill": "final_account",
-        "t6_file_edit": "file_edit",
-    }
     task_type = str(payload.get("task_type", "")).strip().lower()
-    task_type = alias_map.get(task_type, task_type)
+    normalized = normalize_task_alias(task_type)
+    if normalized:
+        task_type = normalized
     task_payload = payload.get("task_payload", payload)
     if isinstance(task_payload, dict) and task_type:
         return task_type, task_payload
@@ -1690,56 +1541,13 @@ def _extract_task_request(message: str, payload: Dict[str, Any]) -> Tuple[Option
     if message.startswith("/task "):
         parts = message.split(maxsplit=2)
         task_type = parts[1].strip().lower() if len(parts) > 1 else ""
-        task_type = alias_map.get(task_type, task_type)
+        normalized = normalize_task_alias(task_type)
+        if normalized:
+            task_type = normalized
         if task_type:
             return task_type, payload
 
     return None, payload
-
-
-def _supervisor_infer_task(message: str, payload: Dict[str, Any]) -> Tuple[Optional[str], float, List[str]]:
-    text = str(message or "").strip().lower()
-    reasons: List[str] = []
-    if not text:
-        return None, 0.0, reasons
-
-    if any(key in text for key in ("修改文件", "编辑文件", "替换文本", "write_file", "replace_text", "xlsx_edit")):
-        reasons.append("R602_FILE_EDIT")
-        return "file_edit", 0.93, reasons
-
-    has_budget = any(key in text for key in ("预算", "budget"))
-    has_final = any(key in text for key in ("决算", "final", "结项"))
-    has_check = any(key in text for key in ("核对", "比对", "差异", "一致性"))
-    has_fill = any(key in text for key in ("填写", "回填", "填报"))
-
-    if has_budget and has_final and has_check:
-        reasons.append("R201_RECON")
-        return "recon", 0.9, reasons
-    if has_budget and has_fill:
-        reasons.append("R401_BUDGET_FILL")
-        return "budget", 0.88, reasons
-    if has_final and has_fill:
-        reasons.append("R501_FINAL_FILL")
-        return "final_account", 0.88, reasons
-    if any(key in text for key in ("整理材料", "报销材料", "附件整理", "打包", "归档")):
-        reasons.append("R301_MATERIAL")
-        return "reimburse", 0.86, reasons
-    if any(key in text for key in ("报销规则", "能不能报", "附件要求", "制度", "口径")):
-        reasons.append("R101_QA")
-        return "qa", 0.85, reasons
-    if has_budget:
-        reasons.append("R402_BUDGET")
-        return "budget", 0.73, reasons
-    if has_final:
-        reasons.append("R502_FINAL")
-        return "final_account", 0.73, reasons
-    if any(key in text for key in ("报销", "发票", "附件")):
-        reasons.append("R302_REIMBURSE")
-        return "qa", 0.72, reasons
-    if bool(payload.get("workspace_mode", False)):
-        reasons.append("R603_WORKSPACE")
-        return "file_edit", 0.66, reasons
-    return None, 0.0, reasons
 
 
 def _looks_like_workspace_intent(message: str) -> bool:
@@ -1846,8 +1654,20 @@ def _prepare_task_payload_for_dispatch(
     if should_prepare_file_actions:
         effective_message = _resolve_message_with_referenced_file(message, merged_payload)
         if not isinstance(merged_payload.get("actions"), list) or not merged_payload.get("actions"):
+            workspace_task = str(merged_payload.get("workspace_task", "")).strip().lower()
+            if workspace_task == "reimbursement_package":
+                package_name = str(merged_payload.get("package_name", "")).strip()
+                raw_options = merged_payload.get("reimbursement_package_options", {})
+                options = raw_options if isinstance(raw_options, dict) else {}
+                merged_payload["actions"] = [
+                    {
+                        "action": "organize_reimbursement_package",
+                        "package_name": package_name,
+                        "options": options,
+                    }
+                ]
             command_plan = _build_direct_plan_from_single_reference(message, merged_payload)
-            if command_plan is None:
+            if command_plan is None and not merged_payload.get("actions"):
                 command_plan = _parse_workspace_command(effective_message)
             if isinstance(command_plan, dict):
                 actions = command_plan.get("actions", [])
@@ -2184,7 +2004,14 @@ def _format_task_reply(task_type: str, result: Dict[str, Any]) -> str:
                 return message
         changeset = result.get("changeset", [])
         change_count = len(changeset) if isinstance(changeset, list) else 0
-        return f"文件编辑任务完成：状态={status}，变更 {change_count} 项。"
+        base = f"文件编辑任务完成：状态={status}，变更 {change_count} 项。"
+        logs = result.get("logs", [])
+        errors = result.get("errors", [])
+        if isinstance(logs, list) and logs:
+            base += "\n" + "\n".join(f"- {str(item)}" for item in logs[:3])
+        if isinstance(errors, list) and errors:
+            base += "\n错误：\n" + "\n".join(f"- {str(item)}" for item in errors[:3])
+        return base
 
     if normalized_task == "qa" or result_type == "qa":
         answer = str(result.get("answer", "")).strip()
