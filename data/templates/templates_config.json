@@ -1,0 +1,442 @@
+{
+  "决算表": {
+    "filename": "决算表.xlsx",
+    "type": "excel",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "决算表_{timestamp}.xlsx",
+    "metadata": {
+      "content_type": "excel",
+      "sections_count": 0,
+      "tables_count": 0,
+      "placeholders_count": 0,
+      "parent_folders": [],
+      "folder_depth": 0
+    }
+  },
+  "国内+思政实践_~$2": {
+    "filename": "国内+思政实践_~$2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "国内+思政实践_~$2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 0,
+      "tables_count": 0,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "国内+思政实践_附件1": {
+    "filename": "国内+思政实践_附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+    "type": "excel",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "国内+思政实践_附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）_{timestamp}.xlsx",
+    "metadata": {
+      "content_type": "excel",
+      "sections_count": 0,
+      "tables_count": 3,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "国内+思政实践_附件2": {
+    "filename": "国内+思政实践_附件2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "国内+思政实践_附件2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 1,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "学生活动_体育系队票据自查表模板-26": {
+    "filename": "学生活动_体育系队票据自查表模板-26.3.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "学生活动_体育系队票据自查表模板-26.3_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 1,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "学生活动_教练费_明细（模板）": {
+    "filename": "学生活动_教练费 明细（模板）.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "学生活动_教练费 明细（模板）_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 1,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "学生活动_未央书院_学生活动预算表（25": {
+    "filename": "学生活动_未央书院 学生活动预算表（25.3更新）.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "学生活动_未央书院 学生活动预算表（25.3更新）_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 0,
+      "tables_count": 1,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "学生活动_未央代发-调研模板": {
+    "filename": "学生活动_未央代发-调研模板.xlsx",
+    "type": "excel",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "学生活动_未央代发-调研模板_{timestamp}.xlsx",
+    "metadata": {
+      "content_type": "excel",
+      "sections_count": 0,
+      "tables_count": 3,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "学生活动_校外人员_代发_模板": {
+    "filename": "学生活动_校外人员 代发 模板.xlsx",
+    "type": "excel",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "学生活动_校外人员 代发 模板_{timestamp}.xlsx",
+    "metadata": {
+      "content_type": "excel",
+      "sections_count": 0,
+      "tables_count": 3,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "学生活动_物品领用名单_模板": {
+    "filename": "学生活动_物品领用名单 模板.xlsx",
+    "type": "excel",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "学生活动_物品领用名单 模板_{timestamp}.xlsx",
+    "metadata": {
+      "content_type": "excel",
+      "sections_count": 0,
+      "tables_count": 3,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "学生活动_附件3": {
+    "filename": "学生活动_附件3. 未央书院学生活动决算表 （25.3更新）.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "学生活动_附件3. 未央书院学生活动决算表 （25.3更新）_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 1,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "学生活动_（更新）体育系队票据自查表模板-26": {
+    "filename": "学生活动_（更新）体育系队票据自查表模板-26.3.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "学生活动_（更新）体育系队票据自查表模板-26.3_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 1,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "学生活动经费使用情况": {
+    "filename": "学生活动经费使用情况.docx",
+    "type": "word",
+    "placeholders": [
+      "contact",
+      "participants",
+      "expense_detail",
+      "activity_location",
+      "activity_content",
+      "activity_time",
+      "name"
+    ],
+    "field_mapping": {
+      "contact": "contact",
+      "participants": "participants",
+      "expense_detail": "expense_detail",
+      "activity_location": "activity_location",
+      "activity_content": "activity_content",
+      "activity_time": "activity_time",
+      "name": "name"
+    },
+    "output_filename_pattern": "学生活动经费使用情况_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 1,
+      "placeholders_count": 7,
+      "parent_folders": [],
+      "folder_depth": 0
+    }
+  },
+  "工作餐报销_餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_~$4": {
+    "filename": "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_~$4.工作餐审批单模板.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_~$4.工作餐审批单模板_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 0,
+      "tables_count": 0,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "工作餐报销_餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_附件4": {
+    "filename": "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_附件4.工作餐审批单模板.docx",
+    "type": "word",
+    "placeholders": [
+      "dining_reason",
+      "remarks",
+      "dining_names",
+      "total_amount"
+    ],
+    "field_mapping": {
+      "dining_reason": "dining_reason",
+      "remarks": "remarks",
+      "dining_names": "dining_names",
+      "total_amount": "total_amount"
+    },
+    "output_filename_pattern": "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_附件4.工作餐审批单模板_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 2,
+      "placeholders_count": 4,
+      "parent_folders": [
+        "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "核对报告": {
+    "filename": "核对报告.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "核对报告_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 0,
+      "tables_count": 0,
+      "placeholders_count": 0,
+      "parent_folders": [],
+      "folder_depth": 0
+    }
+  },
+  "海外实践_关于海外实践报销大额转账给学生个人的情况说明（模板）": {
+    "filename": "海外实践_关于海外实践报销大额转账给学生个人的情况说明（模板）.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "海外实践_关于海外实践报销大额转账给学生个人的情况说明（模板）_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 0,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "海外实践_出资证明_书院信纸版_模板": {
+    "filename": "海外实践_出资证明 书院信纸版 模板.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "海外实践_出资证明 书院信纸版 模板_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 2,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "海外实践_合同补充协议模板": {
+    "filename": "海外实践_合同补充协议模板.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "海外实践_合同补充协议模板_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 0,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "海外实践_未央书院_海外实践决算表（25": {
+    "filename": "海外实践_未央书院 海外实践决算表（25.3更新版）电子版发老师.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "海外实践_未央书院 海外实践决算表（25.3更新版）电子版发老师_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 1,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "海外实践_未央书院_海外实践差旅报销模板（25": {
+    "filename": "海外实践_未央书院 海外实践差旅报销模板（25.3更新）电子版发老师.xlsx",
+    "type": "excel",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "海外实践_未央书院 海外实践差旅报销模板（25.3更新）电子版发老师_{timestamp}.xlsx",
+    "metadata": {
+      "content_type": "excel",
+      "sections_count": 0,
+      "tables_count": 2,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "海外实践_海外实践拜访公函_模板": {
+    "filename": "海外实践_海外实践拜访公函 模板.docx",
+    "type": "word",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "海外实践_海外实践拜访公函 模板_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 1,
+      "placeholders_count": 0,
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "海外实践_海外实践租车说明（填写模板）v2": {
+    "filename": "海外实践_海外实践租车说明（填写模板）V2.docx",
+    "type": "word",
+    "placeholders": [
+      "__",
+      "____________",
+      "________",
+      "_____等______名师生在____________________",
+      "_____老师等____",
+      "____年_____月______日至_____年_____月____"
+    ],
+    "field_mapping": {
+      "__": "__",
+      "____________": "____________",
+      "________": "________",
+      "_____等______名师生在____________________": "_____等______名师生在____________________",
+      "_____老师等____": "_____老师等____",
+      "____年_____月______日至_____年_____月____": "____年_____月______日至_____年_____月____"
+    },
+    "output_filename_pattern": "海外实践_海外实践租车说明（填写模板）V2_{timestamp}.docx",
+    "metadata": {
+      "content_type": "word",
+      "sections_count": 1,
+      "tables_count": 2,
+      "placeholders_count": 6,
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1
+    }
+  },
+  "预算表": {
+    "filename": "预算表.xlsx",
+    "type": "excel",
+    "placeholders": [],
+    "field_mapping": {},
+    "output_filename_pattern": "预算表_{timestamp}.xlsx",
+    "metadata": {
+      "content_type": "excel",
+      "sections_count": 0,
+      "tables_count": 1,
+      "placeholders_count": 0,
+      "parent_folders": [],
+      "folder_depth": 0
+    }
+  }
+}

@@ -1,0 +1,949 @@
+{
+  "generated_at": "2026-04-09T18:12:32.143629",
+  "source_directory": "docs\\reimbursement_posted_by_teacher",
+  "templates_directory": "data\\templates",
+  "kb_name": "finance",
+  "summary": {
+    "total_files_scanned": 37,
+    "template_files_found": 23,
+    "templates_collected": 22,
+    "collection_errors": 0
+  },
+  "folder_structure": {
+    "root": {
+      "file_count": 1,
+      "template_count": 0,
+      "files": [
+        "党建相关的门票和电影票.docx"
+      ]
+    },
+    "国内+思政实践": {
+      "file_count": 7,
+      "template_count": 4,
+      "files": [
+        "2026寒假实践培训.pdf",
+        "~$2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+        "~$附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+        "未央书院 实践支队差旅报销特殊情况说明（26.2更新）.docx",
+        "清华大学差旅住宿报销标准（国内）.pdf",
+        "附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+        "附件2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx"
+      ]
+    },
+    "学生活动": {
+      "file_count": 10,
+      "template_count": 9,
+      "files": [
+        "体育系队票据自查表模板-26.3 (1).docx",
+        "体育系队票据自查表模板-26.3.docx",
+        "学生日常活动特殊说明模版.docx",
+        "教练费 明细（模板）.docx",
+        "未央书院 学生活动预算表（25.3更新）.docx",
+        "未央代发-调研模板.xls",
+        "校外人员 代发 模板.xls",
+        "物品领用名单 模板.xls",
+        "附件3. 未央书院学生活动决算表 （25.3更新）.docx",
+        "（更新）体育系队票据自查表模板-26.3.docx"
+      ]
+    },
+    "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）": {
+      "file_count": 3,
+      "template_count": 2,
+      "files": [
+        "2015年版清华大学接待清单.doc",
+        "~$4.工作餐审批单模板.docx",
+        "附件4.工作餐审批单模板.docx"
+      ]
+    },
+    "政策文件": {
+      "file_count": 2,
+      "template_count": 0,
+      "files": [
+        "未央书院学生活动经费管理细则（2026.2.26修订）.pdf",
+        "未央书院社会实践类活动报销工作细则 (2025.11.9 修订).pdf"
+      ]
+    },
+    "海外实践": {
+      "file_count": 11,
+      "template_count": 8,
+      "files": [
+        "20180305出国报销收支情况表.xls",
+        "关于海外实践报销大额转账给学生个人的情况说明（模板）.docx",
+        "出资证明 书院信纸版 模板.docx",
+        "合同补充协议模板.docx",
+        "未央书院 海外实践决算表（25.3更新版）电子版发老师.docx",
+        "未央书院 海外实践差旅报销模板（25.3更新）电子版发老师.xlsx",
+        "未央书院海外实践出行前自查承诺书（支队负责人必交）V7.docx",
+        "海外实践拜访公函 模板.docx",
+        "海外实践租车说明（填写模板）V2.docx",
+        "清华大学各国家和地区住宿费、伙食费、公杂费开支标准表（国际）.docx.pdf",
+        "附件1. 英文派出证明模板（适用于欧、美等国签证用且使用校内经费）.doc"
+      ]
+    },
+    "清华大学 财务报销标准": {
+      "file_count": 3,
+      "template_count": 0,
+      "files": [
+        "清华大学国内差旅管理办法（含交通费标准）.pdf",
+        "清华大学差旅住宿报销标准.pdf",
+        "附件：各国家和地区住宿费、伙食费、公杂费开支标准表.docx.pdf"
+      ]
+    }
+  },
+  "templates": [
+    {
+      "file_name": "~$2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\国内+思政实践\\~$2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "target_path": "data\\templates\\国内+思政实践_~$2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "target_name": "国内+思政实践_~$2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 162,
+      "file_hash": "8958f79b8eba3822e6e0d7a76a2407cf",
+      "collected_at": "2026-04-09T18:12:28.847795",
+      "parsed_metadata": {
+        "doc_id": "finance__国内+思政实践_~$2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）__sha14c6b0f15",
+        "content_type": "word",
+        "title": "",
+        "sections_count": 0,
+        "tables_count": 0,
+        "status": "error",
+        "parse_duration": 0.405
+      }
+    },
+    {
+      "file_name": "附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\国内+思政实践\\附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+      "target_path": "data\\templates\\国内+思政实践_附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+      "target_name": "国内+思政实践_附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 12402,
+      "file_hash": "e4aba5f175e36f411508cb24f57b9d34",
+      "collected_at": "2026-04-09T18:12:31.084247",
+      "parsed_metadata": {
+        "doc_id": "finance__国内+思政实践_附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）__sha13c238273",
+        "content_type": "excel",
+        "title": "国内+思政实践_附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）",
+        "sections_count": 0,
+        "tables_count": 3,
+        "status": "partial",
+        "parse_duration": 2.21
+      }
+    },
+    {
+      "file_name": "附件2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\国内+思政实践\\附件2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "target_path": "data\\templates\\国内+思政实践_附件2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "target_name": "国内+思政实践_附件2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 21588,
+      "file_hash": "ecd9be6af5863e7f32cd0a5b57dfb7c8",
+      "collected_at": "2026-04-09T18:12:31.189634",
+      "parsed_metadata": {
+        "doc_id": "finance__国内+思政实践_附件2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）__sha1674b6d27",
+        "content_type": "word",
+        "title": "附件2. 书院国内/思政实践决算表",
+        "sections_count": 1,
+        "tables_count": 1,
+        "status": "partial",
+        "parse_duration": 0.086
+      }
+    },
+    {
+      "file_name": "体育系队票据自查表模板-26.3 (1).docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\学生活动\\体育系队票据自查表模板-26.3 (1).docx",
+      "target_path": "data\\templates\\学生活动_体育系队票据自查表模板-26.3 (1).docx",
+      "target_name": "学生活动_体育系队票据自查表模板-26.3 (1).docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "file_size": 14420,
+      "file_hash": "5d158dc2f46a0065b5c9d7cf9ee28720",
+      "collected_at": "2026-04-09T18:12:31.280697",
+      "parsed_metadata": {
+        "doc_id": "finance__学生活动_体育系队票据自查表模板-26.3 (1)__sha14c22b0cf",
+        "content_type": "word",
+        "title": "系队报销票据自查清单",
+        "sections_count": 1,
+        "tables_count": 1,
+        "status": "partial",
+        "parse_duration": 0.028
+      }
+    },
+    {
+      "file_name": "体育系队票据自查表模板-26.3.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\学生活动\\体育系队票据自查表模板-26.3.docx",
+      "target_path": "data\\templates\\学生活动_体育系队票据自查表模板-26.3.docx",
+      "target_name": "学生活动_体育系队票据自查表模板-26.3.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "file_size": 14173,
+      "file_hash": "9402a6e9d4c7c48b23b23b4d4824fe1d",
+      "collected_at": "2026-04-09T18:12:31.323784",
+      "parsed_metadata": {
+        "doc_id": "finance__学生活动_体育系队票据自查表模板-26.3__sha1e76c1ffe",
+        "content_type": "word",
+        "title": "系队报销票据自查清单",
+        "sections_count": 1,
+        "tables_count": 1,
+        "status": "partial",
+        "parse_duration": 0.024
+      }
+    },
+    {
+      "file_name": "教练费 明细（模板）.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\学生活动\\教练费 明细（模板）.docx",
+      "target_path": "data\\templates\\学生活动_教练费 明细（模板）.docx",
+      "target_name": "学生活动_教练费 明细（模板）.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "file_size": 12257,
+      "file_hash": "daa591d7e4579ab001807e872dda5e2d",
+      "collected_at": "2026-04-09T18:12:31.361453",
+      "parsed_metadata": {
+        "doc_id": "finance__学生活动_教练费 明细（模板）__sha1bd8d4d02",
+        "content_type": "word",
+        "title": "教练费说明",
+        "sections_count": 1,
+        "tables_count": 1,
+        "status": "partial",
+        "parse_duration": 0.018
+      }
+    },
+    {
+      "file_name": "未央书院 学生活动预算表（25.3更新）.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\学生活动\\未央书院 学生活动预算表（25.3更新）.docx",
+      "target_path": "data\\templates\\学生活动_未央书院 学生活动预算表（25.3更新）.docx",
+      "target_name": "学生活动_未央书院 学生活动预算表（25.3更新）.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "file_size": 15428,
+      "file_hash": "f316f7f6509499bed2b9853a8defce49",
+      "collected_at": "2026-04-09T18:12:31.402729",
+      "parsed_metadata": {
+        "doc_id": "finance__学生活动_未央书院 学生活动预算表（25.3更新）__sha19e42acff",
+        "content_type": "word",
+        "title": "",
+        "sections_count": 0,
+        "tables_count": 1,
+        "status": "partial",
+        "parse_duration": 0.021
+      }
+    },
+    {
+      "file_name": "未央代发-调研模板.xls",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\学生活动\\未央代发-调研模板.xls",
+      "target_path": "data\\templates\\学生活动_未央代发-调研模板.xls",
+      "target_name": "学生活动_未央代发-调研模板.xls",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "file_size": 29696,
+      "file_hash": "da95661849e43837479109adfe8c5aee",
+      "collected_at": "2026-04-09T18:12:31.417288",
+      "parsed_metadata": {
+        "doc_id": "finance__学生活动_未央代发-调研模板__sha1564d8937",
+        "content_type": "excel",
+        "title": "",
+        "sections_count": 0,
+        "tables_count": 0,
+        "status": "error",
+        "parse_duration": 0.002
+      }
+    },
+    {
+      "file_name": "校外人员 代发 模板.xls",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\学生活动\\校外人员 代发 模板.xls",
+      "target_path": "data\\templates\\学生活动_校外人员 代发 模板.xls",
+      "target_name": "学生活动_校外人员 代发 模板.xls",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "file_size": 19968,
+      "file_hash": "f97a84c35875e9c0060f94e910fffd8f",
+      "collected_at": "2026-04-09T18:12:31.430794",
+      "parsed_metadata": {
+        "doc_id": "finance__学生活动_校外人员 代发 模板__sha1a06ca0a4",
+        "content_type": "excel",
+        "title": "",
+        "sections_count": 0,
+        "tables_count": 0,
+        "status": "error",
+        "parse_duration": 0.002
+      }
+    },
+    {
+      "file_name": "物品领用名单 模板.xls",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\学生活动\\物品领用名单 模板.xls",
+      "target_path": "data\\templates\\学生活动_物品领用名单 模板.xls",
+      "target_name": "学生活动_物品领用名单 模板.xls",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "file_size": 23552,
+      "file_hash": "ea1007d1c30fda738f97048561abced9",
+      "collected_at": "2026-04-09T18:12:31.448903",
+      "parsed_metadata": {
+        "doc_id": "finance__学生活动_物品领用名单 模板__sha18fe24675",
+        "content_type": "excel",
+        "title": "",
+        "sections_count": 0,
+        "tables_count": 0,
+        "status": "error",
+        "parse_duration": 0.002
+      }
+    },
+    {
+      "file_name": "附件3. 未央书院学生活动决算表 （25.3更新）.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\学生活动\\附件3. 未央书院学生活动决算表 （25.3更新）.docx",
+      "target_path": "data\\templates\\学生活动_附件3. 未央书院学生活动决算表 （25.3更新）.docx",
+      "target_name": "学生活动_附件3. 未央书院学生活动决算表 （25.3更新）.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "file_size": 15642,
+      "file_hash": "3f743ff9b8886afe51c0f12cfb41c6b1",
+      "collected_at": "2026-04-09T18:12:31.505370",
+      "parsed_metadata": {
+        "doc_id": "finance__学生活动_附件3. 未央书院学生活动决算表 （25.3更新）__sha1930b7bcd",
+        "content_type": "word",
+        "title": "附件3. 书院学生活动决算表",
+        "sections_count": 1,
+        "tables_count": 1,
+        "status": "partial",
+        "parse_duration": 0.038
+      }
+    },
+    {
+      "file_name": "（更新）体育系队票据自查表模板-26.3.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\学生活动\\（更新）体育系队票据自查表模板-26.3.docx",
+      "target_path": "data\\templates\\学生活动_（更新）体育系队票据自查表模板-26.3.docx",
+      "target_name": "学生活动_（更新）体育系队票据自查表模板-26.3.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "file_size": 14420,
+      "file_hash": "5d158dc2f46a0065b5c9d7cf9ee28720",
+      "collected_at": "2026-04-09T18:12:31.547047",
+      "parsed_metadata": {
+        "doc_id": "finance__学生活动_（更新）体育系队票据自查表模板-26.3__sha14c22b0cf",
+        "content_type": "word",
+        "title": "系队报销票据自查清单",
+        "sections_count": 1,
+        "tables_count": 1,
+        "status": "partial",
+        "parse_duration": 0.026
+      }
+    },
+    {
+      "file_name": "~$4.工作餐审批单模板.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）\\~$4.工作餐审批单模板.docx",
+      "target_path": "data\\templates\\工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_~$4.工作餐审批单模板.docx",
+      "target_name": "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_~$4.工作餐审批单模板.docx",
+      "parent_folders": [
+        "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）"
+      ],
+      "folder_depth": 1,
+      "file_size": 162,
+      "file_hash": "8958f79b8eba3822e6e0d7a76a2407cf",
+      "collected_at": "2026-04-09T18:12:31.562891",
+      "parsed_metadata": {
+        "doc_id": "finance__工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_~$4.工作餐审批单模板__sha14c6b0f15",
+        "content_type": "word",
+        "title": "",
+        "sections_count": 0,
+        "tables_count": 0,
+        "status": "error",
+        "parse_duration": 0.002
+      }
+    },
+    {
+      "file_name": "附件4.工作餐审批单模板.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）\\附件4.工作餐审批单模板.docx",
+      "target_path": "data\\templates\\工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_附件4.工作餐审批单模板.docx",
+      "target_name": "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_附件4.工作餐审批单模板.docx",
+      "parent_folders": [
+        "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）"
+      ],
+      "folder_depth": 1,
+      "file_size": 14955,
+      "file_hash": "01dc36c3fb22b6f8893d5b28f72b6d60",
+      "collected_at": "2026-04-09T18:12:31.600924",
+      "parsed_metadata": {
+        "doc_id": "finance__工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）_附件4.工作餐审批单模板__sha167a7a8a3",
+        "content_type": "word",
+        "title": "清华大学工作用餐审签单",
+        "sections_count": 1,
+        "tables_count": 2,
+        "status": "partial",
+        "parse_duration": 0.018
+      }
+    },
+    {
+      "file_name": "关于海外实践报销大额转账给学生个人的情况说明（模板）.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\海外实践\\关于海外实践报销大额转账给学生个人的情况说明（模板）.docx",
+      "target_path": "data\\templates\\海外实践_关于海外实践报销大额转账给学生个人的情况说明（模板）.docx",
+      "target_name": "海外实践_关于海外实践报销大额转账给学生个人的情况说明（模板）.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 11258,
+      "file_hash": "db1a4b55ab916651262ee721bad43191",
+      "collected_at": "2026-04-09T18:12:31.637446",
+      "parsed_metadata": {
+        "doc_id": "finance__海外实践_关于海外实践报销大额转账给学生个人的情况说明（模板）__sha190c92bad",
+        "content_type": "word",
+        "title": "关于海外实践大额报销款转账给学生个人的特殊情况说明",
+        "sections_count": 1,
+        "tables_count": 0,
+        "status": "partial",
+        "parse_duration": 0.014
+      }
+    },
+    {
+      "file_name": "出资证明 书院信纸版 模板.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\海外实践\\出资证明 书院信纸版 模板.docx",
+      "target_path": "data\\templates\\海外实践_出资证明 书院信纸版 模板.docx",
+      "target_name": "海外实践_出资证明 书院信纸版 模板.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 1038634,
+      "file_hash": "ac4bfe30b51247b066142ad12daac03f",
+      "collected_at": "2026-04-09T18:12:31.758065",
+      "parsed_metadata": {
+        "doc_id": "finance__海外实践_出资证明 书院信纸版 模板__sha18e82d889",
+        "content_type": "word",
+        "title": "December 22, 2025",
+        "sections_count": 1,
+        "tables_count": 2,
+        "status": "partial",
+        "parse_duration": 0.085
+      }
+    },
+    {
+      "file_name": "合同补充协议模板.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\海外实践\\合同补充协议模板.docx",
+      "target_path": "data\\templates\\海外实践_合同补充协议模板.docx",
+      "target_name": "海外实践_合同补充协议模板.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 23121,
+      "file_hash": "4136f5f8204d261b50baeeef2bbfb1f8",
+      "collected_at": "2026-04-09T18:12:31.829378",
+      "parsed_metadata": {
+        "doc_id": "finance__海外实践_合同补充协议模板__sha1960f1fbf",
+        "content_type": "word",
+        "title": "《     》之补充协议",
+        "sections_count": 1,
+        "tables_count": 0,
+        "status": "partial",
+        "parse_duration": 0.041
+      }
+    },
+    {
+      "file_name": "未央书院 海外实践决算表（25.3更新版）电子版发老师.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\海外实践\\未央书院 海外实践决算表（25.3更新版）电子版发老师.docx",
+      "target_path": "data\\templates\\海外实践_未央书院 海外实践决算表（25.3更新版）电子版发老师.docx",
+      "target_name": "海外实践_未央书院 海外实践决算表（25.3更新版）电子版发老师.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 20157,
+      "file_hash": "67cb88bd14e49dcfd9f8883457fa8f5c",
+      "collected_at": "2026-04-09T18:12:31.925147",
+      "parsed_metadata": {
+        "doc_id": "finance__海外实践_未央书院 海外实践决算表（25.3更新版）电子版发老师__sha102280ff8",
+        "content_type": "word",
+        "title": "（如填写后表格超过一页，请双面打印）",
+        "sections_count": 1,
+        "tables_count": 1,
+        "status": "partial",
+        "parse_duration": 0.071
+      }
+    },
+    {
+      "file_name": "未央书院 海外实践差旅报销模板（25.3更新）电子版发老师.xlsx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\海外实践\\未央书院 海外实践差旅报销模板（25.3更新）电子版发老师.xlsx",
+      "target_path": "data\\templates\\海外实践_未央书院 海外实践差旅报销模板（25.3更新）电子版发老师.xlsx",
+      "target_name": "海外实践_未央书院 海外实践差旅报销模板（25.3更新）电子版发老师.xlsx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 13536,
+      "file_hash": "5e0cf8c11deac557bfd7a6baa3ee56d0",
+      "collected_at": "2026-04-09T18:12:32.014458",
+      "parsed_metadata": {
+        "doc_id": "finance__海外实践_未央书院 海外实践差旅报销模板（25.3更新）电子版发老师__sha18b657fb8",
+        "content_type": "excel",
+        "title": "海外实践_未央书院 海外实践差旅报销模板（25.3更新）电子版发老师",
+        "sections_count": 0,
+        "tables_count": 2,
+        "status": "partial",
+        "parse_duration": 0.069
+      }
+    },
+    {
+      "file_name": "海外实践拜访公函 模板.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\海外实践\\海外实践拜访公函 模板.docx",
+      "target_path": "data\\templates\\海外实践_海外实践拜访公函 模板.docx",
+      "target_name": "海外实践_海外实践拜访公函 模板.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 18420,
+      "file_hash": "39c78eb062fc7336f244b98e80dbd430",
+      "collected_at": "2026-04-09T18:12:32.058377",
+      "parsed_metadata": {
+        "doc_id": "finance__海外实践_海外实践拜访公函 模板__sha1aaabaed4",
+        "content_type": "word",
+        "title": "关于商请清华大学未央书院赴（国家/地区/省会）社会实践支队拜访（对方单位全称）的函",
+        "sections_count": 1,
+        "tables_count": 1,
+        "status": "success",
+        "parse_duration": 0.023
+      }
+    },
+    {
+      "file_name": "海外实践租车说明（填写模板）V2.docx",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\海外实践\\海外实践租车说明（填写模板）V2.docx",
+      "target_path": "data\\templates\\海外实践_海外实践租车说明（填写模板）V2.docx",
+      "target_name": "海外实践_海外实践租车说明（填写模板）V2.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 18268,
+      "file_hash": "7737b3a1a83b3c42671e667a9963c77b",
+      "collected_at": "2026-04-09T18:12:32.126137",
+      "parsed_metadata": {
+        "doc_id": "finance__海外实践_海外实践租车说明（填写模板）V2__sha1df523ac4",
+        "content_type": "word",
+        "title": "海外实践租车说明",
+        "sections_count": 1,
+        "tables_count": 2,
+        "status": "partial",
+        "parse_duration": 0.046
+      }
+    },
+    {
+      "file_name": "附件1. 英文派出证明模板（适用于欧、美等国签证用且使用校内经费）.doc",
+      "original_path": "docs\\reimbursement_posted_by_teacher\\海外实践\\附件1. 英文派出证明模板（适用于欧、美等国签证用且使用校内经费）.doc",
+      "target_path": "data\\templates\\海外实践_附件1. 英文派出证明模板（适用于欧、美等国签证用且使用校内经费）.doc",
+      "target_name": "海外实践_附件1. 英文派出证明模板（适用于欧、美等国签证用且使用校内经费）.doc",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "file_size": 93184,
+      "file_hash": "2e51762363915c59b6c68d11533e0b63",
+      "collected_at": "2026-04-09T18:12:32.139537",
+      "parsed_metadata": {
+        "doc_id": "",
+        "content_type": "",
+        "title": "",
+        "sections_count": 0,
+        "tables_count": 0,
+        "status": "unknown",
+        "parse_duration": 0
+      }
+    }
+  ],
+  "all_files": [
+    {
+      "file_name": "党建相关的门票和电影票.docx",
+      "relative_path": "党建相关的门票和电影票.docx",
+      "parent_folders": [],
+      "folder_depth": 0,
+      "is_template": false,
+      "file_size": 22678
+    },
+    {
+      "file_name": "2026寒假实践培训.pdf",
+      "relative_path": "国内+思政实践\\2026寒假实践培训.pdf",
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 1494838
+    },
+    {
+      "file_name": "~$2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "relative_path": "国内+思政实践\\~$2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 162
+    },
+    {
+      "file_name": "~$附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+      "relative_path": "国内+思政实践\\~$附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 165
+    },
+    {
+      "file_name": "未央书院 实践支队差旅报销特殊情况说明（26.2更新）.docx",
+      "relative_path": "国内+思政实践\\未央书院 实践支队差旅报销特殊情况说明（26.2更新）.docx",
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 15341
+    },
+    {
+      "file_name": "清华大学差旅住宿报销标准（国内）.pdf",
+      "relative_path": "国内+思政实践\\清华大学差旅住宿报销标准（国内）.pdf",
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 277045
+    },
+    {
+      "file_name": "附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+      "relative_path": "国内+思政实践\\附件1. 未央书院 xx支队 思政实践 国内实践差旅报销模板-发老师电子版（必填25.12更新）.xlsx",
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 12402
+    },
+    {
+      "file_name": "附件2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "relative_path": "国内+思政实践\\附件2. 未央书院 xx支队 思政实践 国内实践决算表模板（25.12更新）.docx",
+      "parent_folders": [
+        "国内+思政实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 21588
+    },
+    {
+      "file_name": "体育系队票据自查表模板-26.3 (1).docx",
+      "relative_path": "学生活动\\体育系队票据自查表模板-26.3 (1).docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 14420
+    },
+    {
+      "file_name": "体育系队票据自查表模板-26.3.docx",
+      "relative_path": "学生活动\\体育系队票据自查表模板-26.3.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 14173
+    },
+    {
+      "file_name": "学生日常活动特殊说明模版.docx",
+      "relative_path": "学生活动\\学生日常活动特殊说明模版.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 10643
+    },
+    {
+      "file_name": "教练费 明细（模板）.docx",
+      "relative_path": "学生活动\\教练费 明细（模板）.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 12257
+    },
+    {
+      "file_name": "未央书院 学生活动预算表（25.3更新）.docx",
+      "relative_path": "学生活动\\未央书院 学生活动预算表（25.3更新）.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 15428
+    },
+    {
+      "file_name": "未央代发-调研模板.xls",
+      "relative_path": "学生活动\\未央代发-调研模板.xls",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 29696
+    },
+    {
+      "file_name": "校外人员 代发 模板.xls",
+      "relative_path": "学生活动\\校外人员 代发 模板.xls",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 19968
+    },
+    {
+      "file_name": "物品领用名单 模板.xls",
+      "relative_path": "学生活动\\物品领用名单 模板.xls",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 23552
+    },
+    {
+      "file_name": "附件3. 未央书院学生活动决算表 （25.3更新）.docx",
+      "relative_path": "学生活动\\附件3. 未央书院学生活动决算表 （25.3更新）.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 15642
+    },
+    {
+      "file_name": "（更新）体育系队票据自查表模板-26.3.docx",
+      "relative_path": "学生活动\\（更新）体育系队票据自查表模板-26.3.docx",
+      "parent_folders": [
+        "学生活动"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 14420
+    },
+    {
+      "file_name": "2015年版清华大学接待清单.doc",
+      "relative_path": "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）\\2015年版清华大学接待清单.doc",
+      "parent_folders": [
+        "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 45570
+    },
+    {
+      "file_name": "~$4.工作餐审批单模板.docx",
+      "relative_path": "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）\\~$4.工作餐审批单模板.docx",
+      "parent_folders": [
+        "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 162
+    },
+    {
+      "file_name": "附件4.工作餐审批单模板.docx",
+      "relative_path": "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）\\附件4.工作餐审批单模板.docx",
+      "parent_folders": [
+        "工作餐报销 餐单（仅校内结算单报销需要填写，电子票据直接系统内添加餐单）"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 14955
+    },
+    {
+      "file_name": "未央书院学生活动经费管理细则（2026.2.26修订）.pdf",
+      "relative_path": "政策文件\\未央书院学生活动经费管理细则（2026.2.26修订）.pdf",
+      "parent_folders": [
+        "政策文件"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 2109917
+    },
+    {
+      "file_name": "未央书院社会实践类活动报销工作细则 (2025.11.9 修订).pdf",
+      "relative_path": "政策文件\\未央书院社会实践类活动报销工作细则 (2025.11.9 修订).pdf",
+      "parent_folders": [
+        "政策文件"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 198561
+    },
+    {
+      "file_name": "20180305出国报销收支情况表.xls",
+      "relative_path": "海外实践\\20180305出国报销收支情况表.xls",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 25088
+    },
+    {
+      "file_name": "关于海外实践报销大额转账给学生个人的情况说明（模板）.docx",
+      "relative_path": "海外实践\\关于海外实践报销大额转账给学生个人的情况说明（模板）.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 11258
+    },
+    {
+      "file_name": "出资证明 书院信纸版 模板.docx",
+      "relative_path": "海外实践\\出资证明 书院信纸版 模板.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 1038634
+    },
+    {
+      "file_name": "合同补充协议模板.docx",
+      "relative_path": "海外实践\\合同补充协议模板.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 23121
+    },
+    {
+      "file_name": "未央书院 海外实践决算表（25.3更新版）电子版发老师.docx",
+      "relative_path": "海外实践\\未央书院 海外实践决算表（25.3更新版）电子版发老师.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 20157
+    },
+    {
+      "file_name": "未央书院 海外实践差旅报销模板（25.3更新）电子版发老师.xlsx",
+      "relative_path": "海外实践\\未央书院 海外实践差旅报销模板（25.3更新）电子版发老师.xlsx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 13536
+    },
+    {
+      "file_name": "未央书院海外实践出行前自查承诺书（支队负责人必交）V7.docx",
+      "relative_path": "海外实践\\未央书院海外实践出行前自查承诺书（支队负责人必交）V7.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 29919
+    },
+    {
+      "file_name": "海外实践拜访公函 模板.docx",
+      "relative_path": "海外实践\\海外实践拜访公函 模板.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 18420
+    },
+    {
+      "file_name": "海外实践租车说明（填写模板）V2.docx",
+      "relative_path": "海外实践\\海外实践租车说明（填写模板）V2.docx",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 18268
+    },
+    {
+      "file_name": "清华大学各国家和地区住宿费、伙食费、公杂费开支标准表（国际）.docx.pdf",
+      "relative_path": "海外实践\\清华大学各国家和地区住宿费、伙食费、公杂费开支标准表（国际）.docx.pdf",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 242900
+    },
+    {
+      "file_name": "附件1. 英文派出证明模板（适用于欧、美等国签证用且使用校内经费）.doc",
+      "relative_path": "海外实践\\附件1. 英文派出证明模板（适用于欧、美等国签证用且使用校内经费）.doc",
+      "parent_folders": [
+        "海外实践"
+      ],
+      "folder_depth": 1,
+      "is_template": true,
+      "file_size": 93184
+    },
+    {
+      "file_name": "清华大学国内差旅管理办法（含交通费标准）.pdf",
+      "relative_path": "清华大学 财务报销标准\\清华大学国内差旅管理办法（含交通费标准）.pdf",
+      "parent_folders": [
+        "清华大学 财务报销标准"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 539131
+    },
+    {
+      "file_name": "清华大学差旅住宿报销标准.pdf",
+      "relative_path": "清华大学 财务报销标准\\清华大学差旅住宿报销标准.pdf",
+      "parent_folders": [
+        "清华大学 财务报销标准"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 277045
+    },
+    {
+      "file_name": "附件：各国家和地区住宿费、伙食费、公杂费开支标准表.docx.pdf",
+      "relative_path": "清华大学 财务报销标准\\附件：各国家和地区住宿费、伙食费、公杂费开支标准表.docx.pdf",
+      "parent_folders": [
+        "清华大学 财务报销标准"
+      ],
+      "folder_depth": 1,
+      "is_template": false,
+      "file_size": 242900
+    }
+  ]
+}
