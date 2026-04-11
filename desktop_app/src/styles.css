@@ -1368,6 +1368,7 @@ body[data-theme="dark"] .content {
   flex-direction: column;
   gap: 14px;
   background: var(--bg-color);
+  overflow-y: auto;
 }
 
 .compare-header {

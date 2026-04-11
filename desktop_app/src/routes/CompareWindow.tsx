@@ -540,13 +540,16 @@ function buildDocumentDiff(finalPreview: TemplatePreview | null, budgetPreview: 
 
 function detectCompareMode(finalPreview: TemplatePreview | null, budgetPreview: TemplatePreview | null): CompareMode {
   if (!finalPreview || !budgetPreview) return "none";
-  const excelTypes = new Set(["xlsx", "xls"]);
+  const excelTypes = new Set(["xlsx", "xls", "csv"]);
   const docTypes = new Set(["doc", "docx"]);
 
-  if (excelTypes.has(finalPreview.fileType) && excelTypes.has(budgetPreview.fileType)) {
+  const finalType = finalPreview.fileType.toLowerCase();
+  const budgetType = budgetPreview.fileType.toLowerCase();
+
+  if (excelTypes.has(finalType) && excelTypes.has(budgetType)) {
     return "excel";
   }
-  if (docTypes.has(finalPreview.fileType) && docTypes.has(budgetPreview.fileType)) {
+  if (docTypes.has(finalType) && docTypes.has(budgetType)) {
     return "doc";
   }
   return "unsupported";
@@ -566,17 +569,31 @@ function toExcelColumnLabel(index: number): string {
 function renderSheetTable(
   title: string,
   preview: TemplatePreview | null,
-  sheetDiff: SheetDiffResult | null
+  sheetDiff: SheetDiffResult | null,
+  isFinal: boolean
 ) {
   if (!preview) {
-    return <div className="compare-empty">请选择文件并开始核对</div>;
+    return (
+      <Card size="small" className="compare-pane-card" title={title}>
+        <div className="compare-empty">请选择文件并开始核对</div>
+      </Card>
+    );
   }
 
-  if (!["xlsx", "xls"].includes(preview.fileType)) {
-    return <div className="compare-empty">当前文件不是 Excel，暂不支持单元格高亮。</div>;
+  const excelTypes = ["xlsx", "xls", "csv"];
+  if (!excelTypes.includes(preview.fileType.toLowerCase())) {
+    return (
+      <Card size="small" className="compare-pane-card" title={title}>
+        <div className="compare-empty">当前文件不是 Excel，暂不支持单元格高亮。</div>
+      </Card>
+    );
   }
 
-  const rows = findSheet(preview, sheetDiff?.name ?? preview.sheets[0]?.name ?? "");
+  const defaultSheetName = preview.sheets[0]?.name || "";
+  const actualSheetName = sheetDiff?.name && preview.sheets.some(s => s.name === sheetDiff.name) 
+    ? sheetDiff.name 
+    : defaultSheetName;
+  const rows = findSheet(preview, actualSheetName);
   const maxRows = sheetDiff?.maxRows ?? rows.length;
   const maxCols = sheetDiff?.maxCols ?? rows.reduce((max, row) => Math.max(max, row.length), 0);
   const mismatches = sheetDiff?.mismatchKeys ?? new Set<string>();
@@ -1097,8 +1114,8 @@ export function CompareWindow() {
           </>
         ) : (
           <>
-            {renderSheetTable("决算表预览", finalPreview, activeSheetDiff)}
-            {renderSheetTable("预算表预览", budgetPreview, activeSheetDiff)}
+            {renderSheetTable("决算表预览", finalPreview, activeSheetDiff, true)}
+            {renderSheetTable("预算表预览", budgetPreview, activeSheetDiff, false)}
           </>
         )}
       </div>

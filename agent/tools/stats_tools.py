@@ -41,7 +41,7 @@ def aggregate_records(records: List[Dict[str, Any]]) -> ToolResult:
 def generate_final_account(aggregate: Dict[str, Any], output_dir: str | None = None) -> ToolResult:
     out_dir = Path(output_dir or "docs/parsed/final_outputs").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / f"final_account_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    target = out_dir / f"final_account_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
     pd.DataFrame(aggregate.get("by_month", [])).to_excel(target, index=False)
     return ok(final_account_path=str(target))
 
@@ -62,7 +62,7 @@ def budget_calculate(final_data: Dict[str, Any], strategy: Dict[str, Any] | None
 def generate_budget(budget: Dict[str, Any], output_dir: str | None = None) -> ToolResult:
     out_dir = Path(output_dir or "docs/parsed/budget_outputs").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / f"budget_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    target = out_dir / f"budget_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
     pd.DataFrame([budget]).to_excel(target, index=False)
     return ok(budget_path=str(target))
 
@@ -70,7 +70,7 @@ def generate_budget(budget: Dict[str, Any], output_dir: str | None = None) -> To
 def generate_report(aggregate: Dict[str, Any], budget: Dict[str, Any], output_dir: str | None = None) -> ToolResult:
     out_dir = Path(output_dir or "docs/parsed/report_outputs").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+    target = out_dir / f"report_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.md"
     content = (
         "# 年度分析报告\n\n"
         f"- 决算总额: {aggregate.get('total_amount', 0)}\n"
