@@ -16,6 +16,9 @@ from agent.graphs.names import (
     NODE_GEN_DOC,
     NODE_INVOICE_EXTRACT,
     NODE_QA_FALLBACK,
+    NODE_RECON_COMPARE,
+    NODE_RECON_FAIL,
+    NODE_RECON_GENERATE,
     NODE_REIMBURSE_FAIL,
     NODE_RULE_RETRIEVE,
     NODE_SAVE_RECORD,
@@ -63,6 +66,12 @@ BUDGET_LOAD_ROUTES: Dict[str, str] = {
     NODE_BUDGET_FAIL: NODE_BUDGET_FAIL,
 }
 
+RECON_NORMALIZE_ROUTES: Dict[str, str] = {
+    NODE_RECON_COMPARE: NODE_RECON_COMPARE,
+    NODE_RECON_GENERATE: NODE_RECON_GENERATE,
+    NODE_RECON_FAIL: NODE_RECON_FAIL,
+}
+
 CONDITIONAL_ROUTE_SPECS: Dict[str, Dict[str, str]] = {
     "intent": INTENT_ROUTES,
     "reimburse.scan": REIMBURSE_SCAN_ROUTES,
@@ -72,6 +81,7 @@ CONDITIONAL_ROUTE_SPECS: Dict[str, Dict[str, str]] = {
     "final.load_records": FINAL_LOAD_ROUTES,
     "final.data_clean": FINAL_CLEAN_ROUTES,
     "budget.load_final_data": BUDGET_LOAD_ROUTES,
+    "recon.normalize": RECON_NORMALIZE_ROUTES,
 }
 
 

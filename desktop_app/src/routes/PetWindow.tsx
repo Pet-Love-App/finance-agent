@@ -69,11 +69,8 @@ export function PetWindow() {
 
   useEffect(() => {
     document.body.classList.add("pet-route-body");
-    const previousTitle = document.title;
-    document.title = "桌宠";
     return () => {
       document.body.classList.remove("pet-route-body");
-      document.title = previousTitle;
     };
   }, []);
 

@@ -7,6 +7,7 @@ from agent.graphs.names import (
     NODE_FILE_EDIT_START,
     NODE_FINAL_START,
     NODE_QA_START,
+    NODE_RECON_START,
     NODE_REIMBURSE_START,
     NODE_SANDBOX_START,
 )
@@ -96,8 +97,8 @@ TASK_PROFILES: Dict[str, TaskProfile] = {
         "is_write_task": True,
     },
     TASK_RECON: {
-        "runtime_task": TASK_FINAL,
-        "start_node": NODE_FINAL_START,
+        "runtime_task": TASK_RECON,
+        "start_node": NODE_RECON_START,
         "risk_level": "medium",
         "requires_confirmation_by_default": False,
         "is_write_task": False,

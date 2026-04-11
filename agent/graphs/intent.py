@@ -117,6 +117,26 @@ def _classify_task(query: str, payload: Dict[str, Any]) -> Tuple[str, float, Lis
         _append_reason(reasons, "R101_QA")
         return TASK_QA, 0.85, reasons
 
+    has_reimburse = any(key in text for key in ("报销", "发票", "附件"))
+    has_guide_question = any(
+        key in text
+        for key in (
+            "流程",
+            "步骤",
+            "怎么办",
+            "怎么办理",
+            "如何",
+            "怎么",
+            "告诉我",
+            "请问",
+            "介绍一下",
+            "基本",
+        )
+    )
+    if has_reimburse and has_guide_question:
+        _append_reason(reasons, "R102_QA_PROCESS")
+        return TASK_QA, 0.86, reasons
+
     if has_budget:
         _append_reason(reasons, "R402_BUDGET")
         return TASK_BUDGET, 0.74, reasons
@@ -125,7 +145,7 @@ def _classify_task(query: str, payload: Dict[str, Any]) -> Tuple[str, float, Lis
         _append_reason(reasons, "R502_FINAL")
         return TASK_FINAL, 0.74, reasons
 
-    if any(key in text for key in ("报销", "发票", "附件")):
+    if has_reimburse:
         _append_reason(reasons, "R302_REIMBURSE")
         return TASK_REIMBURSE, 0.72, reasons
 

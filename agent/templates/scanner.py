@@ -12,7 +12,6 @@ repo_root = Path(__file__).resolve().parents[2]
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-import xlrd
 from openpyxl import Workbook
 
 from agent.parser.router import FileRouter
@@ -47,6 +46,13 @@ class TemplateScanner:
             str: 转换后的 .xlsx 文件路径
         """
         try:
+            try:
+                import xlrd  # type: ignore
+            except ModuleNotFoundError as exc:
+                raise ModuleNotFoundError(
+                    "缺少 xlrd 依赖，无法转换 .xls 文件。请安装：pip install xlrd"
+                ) from exc
+
             xls_path = Path(xls_path)
             
             if output_path is None:

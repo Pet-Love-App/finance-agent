@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -89,6 +93,124 @@ def _split_sentences(content: str) -> List[str]:
     text = re.sub(r"\[Slide\s*\d+\]", " ", text, flags=re.IGNORECASE)
     parts = re.split(r"[。\n；;!?！？]+", text)
     return [_normalize_text(part) for part in parts if _normalize_text(part)]
+
+
+def _summarize_point(sentence: str, *, max_chars: int = 68) -> str:
+    text = _normalize_text(sentence)
+    if not text:
+        return ""
+    text = re.sub(r"[（(]\s*参考[:：].*?[)）]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"([\u4e00-\u9fff]{2,8})(?:\s+\1){1,}", r"\1", text)
+    text = re.sub(r"([A-Za-z]{2,})(?:\s+\1){1,}", r"\1", text, flags=re.IGNORECASE)
+    text = _normalize_text(text)
+    if len(text) > max_chars:
+        text = text[: max_chars - 1].rstrip("，,；;。.!?！？ ") + "…"
+    return text
+
+
+def _evidence_title(item: Dict[str, Any]) -> str:
+    title = str(item.get("title", "")).strip()
+    if title:
+        return title
+    return _citation_label(item)
+
+
+def _to_float_env(name: str, default: float) -> float:
+    try:
+        return float(str(os.getenv(name, default)).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def _call_llm_chat(messages: List[Dict[str, str]], model: str, temperature: float, timeout: int = 20) -> str:
+    api_key = (os.getenv("AGENT_LLM_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")).strip()
+    if not api_key:
+        raise RuntimeError("missing llm api key")
+    url = os.getenv("OPENAI_API_URL") or os.getenv("AGENT_LLM_API_URL") or "https://api.openai.com/v1/chat/completions"
+    try:
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(url)
+        if not parsed.path or parsed.path == "/":
+            parsed = parsed._replace(path="/v1/chat/completions")
+            url = urlunparse(parsed)
+    except Exception:
+        pass
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": messages,
+            "temperature": float(temperature),
+        },
+        ensure_ascii=False,
+    )
+    req = urllib.request.Request(url, data=payload.encode("utf-8"), method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"Bearer {api_key}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"llm request failed: {exc.code} {exc.reason}") from exc
+    parsed_body = json.loads(body)
+    return str(parsed_body["choices"][0]["message"]["content"])
+
+
+def _generate_llm_answer(question: str, ranked: Sequence[Dict[str, Any]], *, intent: str, max_items: int = 4) -> Optional[str]:
+    use_llm = str(os.getenv("AGENT_QA_USE_LLM_ANSWER", "true")).strip().lower()
+    if use_llm in {"0", "false", "no", "off"}:
+        return None
+    if not ranked:
+        return None
+    api_key = (os.getenv("AGENT_LLM_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")).strip()
+    if not api_key:
+        return None
+
+    evidence_rows: List[Dict[str, Any]] = []
+    for idx, item in enumerate(ranked[: max(1, max_items)], start=1):
+        excerpt = _normalize_text(str(item.get("content", "")))
+        if len(excerpt) > 280:
+            excerpt = excerpt[:280].rstrip() + "..."
+        evidence_rows.append(
+            {
+                "id": idx,
+                "title": str(item.get("title", "")).strip() or _citation_label(item),
+                "source": _citation_label(item),
+                "score": round(float(item.get("score", 0.0)), 3),
+                "excerpt": excerpt,
+            }
+        )
+
+    system_prompt = (
+        "你是高校财务报销问答助手。"
+        "请严格依据提供的检索证据回答，优先输出可执行建议。"
+        "禁止逐字长段复制原文；可以提炼要点。"
+        "若证据不足，请明确说明缺什么信息。"
+        "不要输出“任务结果/检索模式/置信度”等系统字段。"
+    )
+    user_prompt = (
+        f"用户问题：{question}\n"
+        f"问题意图：{intent}\n"
+        f"证据（JSON）：{json.dumps(evidence_rows, ensure_ascii=False)}\n\n"
+        "请输出中文答案，3-6行以内，先给结论，再给必要条件或步骤。"
+    )
+    model = str(os.getenv("AGENT_LLM_MODEL", "DeepSeekV3.2")).strip() or "DeepSeekV3.2"
+    temperature = _to_float_env("AGENT_QA_LLM_TEMPERATURE", _to_float_env("AGENT_LLM_TEMPERATURE", 0.1))
+    try:
+        raw = _call_llm_chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            model=model,
+            temperature=temperature,
+        )
+    except Exception:
+        return None
+    text = _normalize_text(raw)
+    text = re.sub(r"^```(?:json|markdown|text)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text)
+    return text.strip() or None
 
 
 def _extract_key_points(question: str, ranked: Sequence[Dict[str, Any]], max_points: int = 5) -> List[Tuple[str, str]]:
@@ -186,17 +308,32 @@ def answer_generate(
     key_points = _extract_key_points(question, ranked, max_points=5)
     top_title = str(top.get("title", "规则片段")).strip() or "规则片段"
     top_source_name = _citation_label(top)
-    if key_points:
-        lines = [
-            f"已结合检索到的制度内容直接回答。核心依据来自《{top_title}》。",
-        ]
-        for idx, (point, source_name) in enumerate(key_points, start=1):
-            lines.append(f"{idx}. {point}（参考：{source_name}）")
+    llm_answer = _generate_llm_answer(question, ranked, intent=intent, max_items=4)
+    if llm_answer:
+        answer = f"{llm_answer}\n主要依据：{top_title}\n参考：{top_source_name}"
+    elif key_points:
+        lines = ["根据检索到的制度内容，整理如下："]
+        for idx, (point, _) in enumerate(key_points, start=1):
+            concise_point = _summarize_point(point)
+            if not concise_point:
+                continue
+            lines.append(f"{idx}. {concise_point}")
+        lines.append(f"主要依据：{top_title}")
+        lines.append(f"参考：{top_source_name}")
+        if len(lines) <= 3:
+            lines.append("请补充更具体的活动类型和报销场景，我可以进一步细化到可执行清单。")
         answer = "\n".join(lines)
     else:
         top_category = str(top.get("category", "")).strip()
         action_tip = _build_action_tip(top_category or domain_label)
-        answer = f"{action_tip}（参考：{top_source_name}）"
+        answer = f"{action_tip}\n主要依据：{top_title}\n参考：{top_source_name}"
+    evidence_titles: List[str] = []
+    for item in ranked[:3]:
+        label = _evidence_title(item)
+        if label and label not in evidence_titles:
+            evidence_titles.append(label)
+    if evidence_titles:
+        answer = f"{answer}\n补充依据：{'；'.join(evidence_titles)}"
     citations = [
         {
             "source": top.get("source", ""),

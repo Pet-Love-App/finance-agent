@@ -191,16 +191,19 @@ def gen_mail_node(state: AppState) -> AppState:
 
 
 def save_record_node(state: AppState) -> AppState:
+    session_id = str(state.get("payload", {}).get("chat_session_id", "")).strip()
     record: Dict[str, object] = {
         "invoice": state.get("invoice", {}),
         "activity": state.get("activity", {}),
         "rule_result": state.get("rule_result", {}),
         "outputs": state.get("outputs", {}),
+        "session_id": session_id,
     }
-    save_res = save_record(record)
+    save_res = save_record(record, session_id=session_id)
     result = {
         "type": "reimburse",
         "record_id": save_res.data.get("record_id"),
+        "session_id": session_id,
         "outputs": state.get("outputs", {}),
         "rule_result": state.get("rule_result", {}),
         "errors": state.get("errors", []),

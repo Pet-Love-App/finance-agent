@@ -96,6 +96,11 @@ type CompareFileEntry = {
 };
 
 const api = {
+  minimizeWindow: async (): Promise<{ ok: boolean }> => ipcRenderer.invoke("window:minimize"),
+  toggleMaximizeWindow: async (): Promise<{ ok: boolean; maximized: boolean }> =>
+    ipcRenderer.invoke("window:toggleMaximize"),
+  isWindowMaximized: async (): Promise<{ maximized: boolean }> => ipcRenderer.invoke("window:isMaximized"),
+  closeWindow: async (): Promise<{ ok: boolean }> => ipcRenderer.invoke("window:close"),
   openTemplate: async (): Promise<string | null> => ipcRenderer.invoke("template:open"),
   getPredefinedTemplate: async (type: string): Promise<string> => ipcRenderer.invoke("template:exportPredefined", type),
   saveAs: async (sourcePath: string): Promise<string | null> => ipcRenderer.invoke("template:saveAs", sourcePath),

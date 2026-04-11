@@ -315,6 +315,49 @@ class TestRuleQATools(unittest.TestCase):
         self.assertIn("参考：书院财务报销规范-苗霖霖-202508.pptx", ans_res.data["answer"])
         self.assertNotIn("请参考", ans_res.data["answer"])
 
+    def test_answer_generate_prefers_llm_synthesis_when_available(self) -> None:
+        with patch("agent.tools.qa_tools._generate_llm_answer", return_value="可报销范围包括交通与住宿，先完成报备再提交材料。"):
+            ans_res = answer_generate(
+                "告诉我报销流程",
+                [
+                    {
+                        "title": "书院财务报销规范-片段7",
+                        "source": "书院财务报销规范-苗霖霖-202508.pptx",
+                        "content": "先报备，再整理决算表和票据。",
+                        "score": 0.91,
+                        "category": "政策文件",
+                        "doc_type": "pptx",
+                    }
+                ],
+                min_score=0.55,
+                intent="policy",
+            )
+        self.assertTrue(ans_res.success)
+        self.assertIn("可报销范围包括交通与住宿", ans_res.data["answer"])
+        self.assertIn("主要依据：书院财务报销规范-片段7", ans_res.data["answer"])
+        self.assertNotIn("根据检索到的制度内容，整理如下", ans_res.data["answer"])
+
+    def test_answer_generate_fallback_when_llm_unavailable(self) -> None:
+        with patch("agent.tools.qa_tools._generate_llm_answer", return_value=None):
+            ans_res = answer_generate(
+                "学生国内实践差旅报销所需材料有哪些",
+                [
+                    {
+                        "title": "书院财务报销规范-苗霖霖-202508-片段9",
+                        "source": "书院财务报销规范-苗霖霖-202508.pptx",
+                        "content": "交通费用：机票行程单或者机票发票。住宿费：发票及住宿水单。",
+                        "score": 0.93,
+                        "category": "国内+思政实践",
+                        "doc_type": "pptx",
+                    }
+                ],
+                min_score=0.55,
+                intent="policy",
+            )
+        self.assertTrue(ans_res.success)
+        self.assertIn("根据检索到的制度内容，整理如下", ans_res.data["answer"])
+        self.assertIn("交通费用", ans_res.data["answer"])
+
     def test_build_workflow_hint(self) -> None:
         finance_hint = build_workflow_hint("帮我处理财务报销并自动填表")
         self.assertIsNotNone(finance_hint)
@@ -500,6 +543,7 @@ class TestDispatcherGraphPolicy(unittest.TestCase):
         keys = result.get("policy_keys", [])
         self.assertIn("qa_kb_top_k", keys)
         self.assertIn("reimburse_stop_on_rule_violation", keys)
+        self.assertIn("graph_enable_trace", keys)
 
     def test_dispatcher_graph_policy_user_override(self) -> None:
         class _Graph:

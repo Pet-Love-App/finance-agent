@@ -198,7 +198,8 @@ function loadRendererRoute(target: BrowserWindow, route: string): void {
     return;
   }
 
-  target.loadFile(path.join(__dirname, "../dist/index.html"), { hash: normalized });
+  const indexFileUrl = pathToFileURL(path.join(__dirname, "../dist/index.html")).toString();
+  target.loadURL(`${indexFileUrl}#${normalized}`);
 }
 
 function resolveLottiePlayerCode(): string {
@@ -527,6 +528,8 @@ function createMainWindow(): void {
     width: 1200,
     height: 760,
     show: false,
+    titleBarStyle: "hidden",
+    titleBarOverlay: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -731,6 +734,14 @@ function getDialogParentWindow(...candidates: Array<BrowserWindow | null>): Brow
   return undefined;
 }
 
+function getSenderWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow | null {
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  if (senderWindow && !senderWindow.isDestroyed()) {
+    return senderWindow;
+  }
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+}
+
 function normalizeWorkspaceDir(candidatePath: string): string | null {
   if (!candidatePath) {
     return null;
@@ -851,6 +862,8 @@ function createCompareWindow(): void {
     width: 1480,
     height: 920,
     show: true,
+    titleBarStyle: "hidden",
+    titleBarOverlay: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -2021,6 +2034,42 @@ ipcMain.handle("chat:sessions:delete", async (_event, sessionId: string) => {
 
 ipcMain.handle("pet:openMain", async () => {
   showOrCreateMainWindow();
+});
+
+ipcMain.handle("window:minimize", async (event) => {
+  const target = getSenderWindow(event);
+  if (!target) {
+    return { ok: false };
+  }
+  target.minimize();
+  return { ok: true };
+});
+
+ipcMain.handle("window:toggleMaximize", async (event) => {
+  const target = getSenderWindow(event);
+  if (!target) {
+    return { ok: false, maximized: false };
+  }
+  if (target.isMaximized()) {
+    target.unmaximize();
+  } else {
+    target.maximize();
+  }
+  return { ok: true, maximized: target.isMaximized() };
+});
+
+ipcMain.handle("window:isMaximized", async (event) => {
+  const target = getSenderWindow(event);
+  return { maximized: Boolean(target?.isMaximized()) };
+});
+
+ipcMain.handle("window:close", async (event) => {
+  const target = getSenderWindow(event);
+  if (!target) {
+    return { ok: false };
+  }
+  target.close();
+  return { ok: true };
 });
 
 ipcMain.handle("pet:closeChat", async () => {
