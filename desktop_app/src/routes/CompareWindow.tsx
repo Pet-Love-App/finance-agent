@@ -115,7 +115,8 @@ function buildDocBlocks(preview: TemplatePreview | null): string[] {
 
 function collectPreviewLines(preview: TemplatePreview | null): string[] {
   if (!preview) return [];
-  if (preview.fileType === "xlsx" || preview.fileType === "xls") {
+  const fileType = preview.fileType.toLowerCase();
+  if (fileType === "xlsx" || fileType === "xls" || fileType === "csv") {
     const lines: string[] = [];
     for (const sheet of preview.sheets) {
       for (const row of sheet.rows) {
@@ -475,7 +476,10 @@ function buildProcessChecks(
 
 function buildWorkbookDiff(finalPreview: TemplatePreview | null, budgetPreview: TemplatePreview | null): SheetDiffResult[] {
   if (!finalPreview || !budgetPreview) return [];
-  if (!["xlsx", "xls"].includes(finalPreview.fileType) || !["xlsx", "xls"].includes(budgetPreview.fileType)) {
+  const excelTypes = ["xlsx", "xls", "csv"];
+  const finalType = finalPreview.fileType.toLowerCase();
+  const budgetType = budgetPreview.fileType.toLowerCase();
+  if (!excelTypes.includes(finalType) || !excelTypes.includes(budgetType)) {
     return [];
   }
 
@@ -540,13 +544,15 @@ function buildDocumentDiff(finalPreview: TemplatePreview | null, budgetPreview: 
 
 function detectCompareMode(finalPreview: TemplatePreview | null, budgetPreview: TemplatePreview | null): CompareMode {
   if (!finalPreview || !budgetPreview) return "none";
-  const excelTypes = new Set(["xlsx", "xls"]);
+  const excelTypes = new Set(["xlsx", "xls", "csv"]);
   const docTypes = new Set(["doc", "docx"]);
+  const finalType = finalPreview.fileType.toLowerCase();
+  const budgetType = budgetPreview.fileType.toLowerCase();
 
-  if (excelTypes.has(finalPreview.fileType) && excelTypes.has(budgetPreview.fileType)) {
+  if (excelTypes.has(finalType) && excelTypes.has(budgetType)) {
     return "excel";
   }
-  if (docTypes.has(finalPreview.fileType) && docTypes.has(budgetPreview.fileType)) {
+  if (docTypes.has(finalType) && docTypes.has(budgetType)) {
     return "doc";
   }
   return "unsupported";
@@ -572,11 +578,14 @@ function renderSheetTable(
     return <div className="compare-empty">请选择文件并开始核对</div>;
   }
 
-  if (!["xlsx", "xls"].includes(preview.fileType)) {
+  if (!["xlsx", "xls", "csv"].includes(preview.fileType.toLowerCase())) {
     return <div className="compare-empty">当前文件不是 Excel，暂不支持单元格高亮。</div>;
   }
 
-  const rows = findSheet(preview, sheetDiff?.name ?? preview.sheets[0]?.name ?? "");
+  const defaultSheetName = preview.sheets[0]?.name || "";
+  const actualSheetName =
+    sheetDiff?.name && preview.sheets.some((sheet) => sheet.name === sheetDiff.name) ? sheetDiff.name : defaultSheetName;
+  const rows = findSheet(preview, actualSheetName);
   const maxRows = sheetDiff?.maxRows ?? rows.length;
   const maxCols = sheetDiff?.maxCols ?? rows.reduce((max, row) => Math.max(max, row.length), 0);
   const mismatches = sheetDiff?.mismatchKeys ?? new Set<string>();
@@ -647,6 +656,93 @@ function renderDocTable(title: string, preview: TemplatePreview | null, textDiff
   );
 }
 
+function renderGenericPreview(title: string, preview: TemplatePreview | null) {
+  if (!preview) {
+    return <div className="compare-empty">请选择文件并开始核对</div>;
+  }
+
+  if (preview.fileType === "xlsx" || preview.fileType === "xls") {
+    const sheet = preview.sheets[0];
+    const rows = sheet?.rows ?? [];
+    const maxRows = Math.min(rows.length, 120);
+    const maxCols = Math.min(rows.reduce((max, row) => Math.max(max, row.length), 0), 36);
+
+    return (
+      <Card size="small" className="compare-pane-card" title={`${title}${sheet ? `（${sheet.name}）` : ""}`}>
+        <div className="compare-table-wrap">
+          {maxRows === 0 || maxCols === 0 ? (
+            <div className="compare-empty">未解析到可预览内容</div>
+          ) : (
+            <table className="excel-preview-table compare-table">
+              <thead>
+                <tr>
+                  <th className="excel-index-cell">#</th>
+                  {Array.from({ length: maxCols }, (_, index) => (
+                    <th key={`head-${index}`}>{toExcelColumnLabel(index)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: maxRows }, (_, rowIndex) => (
+                  <tr key={`row-${rowIndex}`}>
+                    <th className="excel-row-index">{rowIndex + 1}</th>
+                    {Array.from({ length: maxCols }, (_, colIndex) => {
+                      const value = rows[rowIndex]?.[colIndex] ?? "";
+                      return (
+                        <td key={`${rowIndex}:${colIndex}`}>
+                          <span className="excel-cell-text">{value || "∅"}</span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Card>
+    );
+  }
+
+  if (preview.fileType === "pdf") {
+    return (
+      <Card size="small" className="compare-pane-card" title={title}>
+        <div className="compare-doc-wrap">
+          {preview.fileUrl ? (
+            <iframe
+              className="pdf-preview-frame"
+              src={`${preview.fileUrl}#page=1&zoom=110`}
+              title={preview.filePath}
+            />
+          ) : (
+            <div className="compare-empty">当前 PDF 无法内嵌显示，请使用系统应用打开。</div>
+          )}
+        </div>
+      </Card>
+    );
+  }
+
+  const blocks = buildDocBlocks(preview);
+  return (
+    <Card size="small" className="compare-pane-card" title={title}>
+      <div className="compare-doc-wrap">
+        {blocks.length === 0 ? (
+          <div className="compare-empty">未解析到可比较文本</div>
+        ) : (
+          <div className="compare-doc-list">
+            {blocks.map((value, index) => (
+              <div key={`doc-line-${index}`} className="compare-doc-line">
+                <span className="compare-doc-index">{index + 1}</span>
+                <span className="compare-doc-text">{value || "∅"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export function CompareWindow() {
   const bridge = window.templateApi;
   const [boundDir, setBoundDir] = useState<string>("");
@@ -703,6 +799,13 @@ export function CompareWindow() {
     }
     return 0;
   }, [compareMode, diffBySheet, docDiff.mismatchCount]);
+  const parseSummary = useMemo(() => {
+    const toSummary = (label: string, preview: TemplatePreview | null) => {
+      if (!preview) return `${label}: 未解析`;
+      return `${label}: ${preview.fileType} / sheets=${preview.sheets.length} / text=${preview.textSections.length}`;
+    };
+    return `${toSummary("决算", finalPreview)}；${toSummary("预算", budgetPreview)}`;
+  }, [finalPreview, budgetPreview]);
   const activeSheetDiff = useMemo(
     () => diffBySheet.find((item) => item.name === activeSheet) ?? diffBySheet[0] ?? null,
     [diffBySheet, activeSheet]
@@ -955,6 +1058,7 @@ export function CompareWindow() {
             />
           )}
           {error && <Alert type="error" message={error} />}
+          {(finalPreview || budgetPreview) && <Alert type="info" message={parseSummary} />}
         </Space>
       </Card>
 
@@ -1087,9 +1191,14 @@ export function CompareWindow() {
             <Text>正在解析并比对文件...</Text>
           </div>
         ) : compareMode === "unsupported" ? (
-          <div className="compare-loading">
-            <Text>当前仅支持同类型对比：Excel 对 Excel，或 doc/docx 对 doc/docx。</Text>
-          </div>
+          <>
+            <div className="compare-loading">
+              <Text>当前仅支持同类型高亮比对：Excel 对 Excel，或 doc/docx 对 doc/docx。</Text>
+              <Text type="secondary">已展示原始预览，可先人工核对内容。</Text>
+            </div>
+            {renderGenericPreview("决算表预览", finalPreview)}
+            {renderGenericPreview("预算表预览", budgetPreview)}
+          </>
         ) : compareMode === "doc" ? (
           <>
             {renderDocTable("决算表预览", finalPreview, docDiff)}

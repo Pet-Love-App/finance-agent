@@ -87,10 +87,10 @@ class TemplateGenerator:
                 for col in range(1, ws.max_column + 1):
                     cell = ws.cell(row=row, column=col)
                     if cell.value:
-                        cell_value = str(cell.value)
-                        if '{{item.' in cell_value:
-                            has_placeholder = True
-                            print(f"找到占位符: {cell_value} 在行 {row}, 列 {col}")
+                            cell_value = str(cell.value)
+                            if '{{item.' in cell_value or '{{ item.' in cell_value:
+                                has_placeholder = True
+                                print(f"找到占位符: {cell_value} 在行 {row}, 列 {col}")
                     row_data.append({
                         "value": cell.value
                     })
@@ -100,9 +100,25 @@ class TemplateGenerator:
                     template_area_end = row
                     template_rows.append(row_data)
             
-            # 查找循环结束标记
-            end_row = None
-            if template_area_end:
+            # 查找循环开始和结束标记，提取数据列表名称
+            for row in range(1, ws.max_row + 1):
+                for col in range(1, ws.max_column + 1):
+                    cell = ws.cell(row=row, column=col)
+                    if cell.value:
+                        cell_value = str(cell.value)
+                        # 查找 {% for item in data_list %} 格式的循环标记
+                        import re
+                        match = re.search(r'\{\%\s*for\s+item\s+in\s+([\w_]+)\s*\%\}', cell_value)
+                        if match:
+                            data_list_name = match.group(1)
+                            print(f"找到数据列表名称: {data_list_name}")
+                        # 查找结束标记
+                        if '{% endfor %}' in cell_value:
+                            end_row = row
+                            print(f"找到结束标记在行 {row}")
+            
+            # 如果没有找到结束标记，再次搜索
+            if not end_row and template_area_end:
                 for row in range(template_area_end, ws.max_row + 1):
                     for col in range(1, ws.max_column + 1):
                         cell = ws.cell(row=row, column=col)
@@ -132,6 +148,32 @@ class TemplateGenerator:
                 
                 for item_idx, item in enumerate(data_list):
                     print(f"填充第 {item_idx + 1} 条数据: {item}")
+                    
+                    # 字段映射
+                    mapped_item = item.copy()
+                    
+                    # 发票字段映射
+                    if 'invoice_no' in item:
+                        mapped_item['invoice_serial'] = item['invoice_no']
+                    if 'amount' in item:
+                        mapped_item['invoice_amount'] = item['amount']
+                    if 'content' in item:
+                        mapped_item['invoice_content'] = item['content']
+                    
+                    # 活动字段映射（从 activity 中获取）
+                    if 'activity' in data:
+                        activity_data = data['activity']
+                        if 'activity_name' in activity_data:
+                            mapped_item['activity_name'] = activity_data['activity_name']
+                        if 'activity_date' in activity_data:
+                            mapped_item['activity_date'] = activity_data['activity_date']
+                        if 'org' in activity_data:
+                            mapped_item['organization'] = activity_data['org']
+                        if 'student_name' in activity_data:
+                            mapped_item['handler_name'] = activity_data['student_name']
+                        if 'student_id' in activity_data:
+                            mapped_item['student_id'] = activity_data['student_id']
+                    
                     for template_row in template_rows:
                         for col_idx, cell_template in enumerate(template_row):
                             col = col_idx + 1
@@ -140,7 +182,13 @@ class TemplateGenerator:
                             # 替换占位符
                             if cell_template['value']:
                                 cell_value = str(cell_template['value'])
-                                replaced_value = self._replace_placeholders(cell_value, item)
+                                replaced_value = self._replace_placeholders(cell_value, mapped_item)
+                                # 处理 round 过滤器
+                                if '|round' in replaced_value:
+                                    import re
+                                    match = re.search(r'(\d+\.\d+)\|round\(\d+\)', replaced_value)
+                                    if match:
+                                        replaced_value = match.group(1)
                                 cell.value = replaced_value
                                 print(f"替换占位符: {cell_value} -> {replaced_value} 在行 {current_row}, 列 {col}")
                         
@@ -194,26 +242,28 @@ class TemplateGenerator:
     def _replace_placeholders(self, text: str, data: Dict[str, Any]) -> str:
         import re
         
-        # 替换 {{item.field}} 格式
+        # 替换 {{item.field}} 或 {{ item.field }} 格式
         def replace_item_placeholder(match):
             field = match.group(1)
+            # 移除可能的过滤器
+            field = field.split('|')[0].strip()
             return str(data.get(field, match.group(0)))
         
-        text = re.sub(r'\{\{item\.([^}]+)\}\}', replace_item_placeholder, text)
+        text = re.sub(r'\{\{\s*item\.([^}]+)\s*\}\}', replace_item_placeholder, text)
         
-        # 替换 {{field}} 格式
+        # 替换 {{field}} 或 {{ field }} 格式
         def replace_placeholder(match):
             field = match.group(1)
             return str(data.get(field, match.group(0)))
         
-        text = re.sub(r'\{\{([\w\u4e00-\u9fa5]+)\}\}', replace_placeholder, text)
+        text = re.sub(r'\{\{\s*([\w\u4e00-\u9fa5]+)\s*\}\}', replace_placeholder, text)
         
-        # 替换 [field] 格式
+        # 替换 [field] 或 [ field ] 格式
         def replace_bracket_placeholder(match):
             field = match.group(1)
             return str(data.get(field, match.group(0)))
         
-        text = re.sub(r'\[([\w\u4e00-\u9fa5]+)\]', replace_bracket_placeholder, text)
+        text = re.sub(r'\[\s*([\w\u4e00-\u9fa5]+)\s*\]', replace_bracket_placeholder, text)
         
         return text
     

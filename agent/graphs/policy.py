@@ -22,6 +22,8 @@ def get_policy_value(
         if key in policy:
             return policy[key]
         for legacy_key in legacy_keys:
+            if legacy_key in policy:
+                return policy[legacy_key]
             if legacy_key in payload:
                 return payload[legacy_key]
     return default

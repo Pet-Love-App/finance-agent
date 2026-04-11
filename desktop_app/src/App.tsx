@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Card, Input, Select, Space, Tag, Typography } from "antd";
-import { FileOutlined, FolderOpenOutlined, FolderOutlined } from "@ant-design/icons";
+import {
+  BorderOutlined,
+  CloseOutlined,
+  FileOutlined,
+  FolderOpenOutlined,
+  FolderOutlined,
+  MinusOutlined,
+  FullscreenExitOutlined,
+} from "@ant-design/icons";
 
 import { PreviewPanel } from "./components/PreviewPanel";
 import { MarkdownRenderer } from "./components/MarkdownRenderer";
@@ -78,6 +86,7 @@ export default function App() {
   const bridge = window.templateApi;
   const bridgeReady = Boolean(bridge);
   const { mode, toggleMode } = useThemeMode();
+  const [windowMaximized, setWindowMaximized] = useState(false);
 
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
@@ -250,6 +259,39 @@ export default function App() {
       bridge.unwatchTemplate().catch(() => undefined);
     };
   }, [bridge]);
+
+  useEffect(() => {
+    if (!bridge?.isWindowMaximized) {
+      return;
+    }
+    let mounted = true;
+    bridge
+      .isWindowMaximized()
+      .then((result) => {
+        if (mounted) {
+          setWindowMaximized(Boolean(result?.maximized));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [bridge]);
+
+  const handleWindowMinimize = async () => {
+    await bridge?.minimizeWindow?.();
+  };
+
+  const handleWindowToggleMaximize = async () => {
+    const result = await bridge?.toggleMaximizeWindow?.();
+    if (result) {
+      setWindowMaximized(Boolean(result.maximized));
+    }
+  };
+
+  const handleWindowClose = async () => {
+    await bridge?.closeWindow?.();
+  };
 
   useEffect(() => {
     if (!preview || preview.kind !== "text") {
@@ -896,22 +938,37 @@ export default function App() {
     typewriterTimerRef.current = window.setTimeout(tick, 0);
   };
 
-  const getTaskPayload = (task: TaskType, text: string): Record<string, unknown> => {
+  const resolveActiveChatSessionId = async (): Promise<string> => {
+    if (!bridge || typeof bridge.listChatSessions !== "function") {
+      return "";
+    }
+    try {
+      const sessionsState = await bridge.listChatSessions();
+      return typeof sessionsState?.activeSessionId === "string" ? sessionsState.activeSessionId : "";
+    } catch {
+      return "";
+    }
+  };
+
+  const getTaskPayload = (task: TaskType, text: string, chatSessionId: string): Record<string, unknown> => {
+    const sessionPayload = chatSessionId ? { chat_session_id: chatSessionId } : {};
     if (task === "qa") {
-      return { query: text };
+      return { ...sessionPayload, query: text };
     }
     if (task === "reimburse") {
       return {
+        ...sessionPayload,
         paths: currentFile ? [currentFile] : [],
         activity_text: text,
         rules: { max_amount: 50000, required_activity_date: true },
       };
     }
     if (task === "final_account") {
-      return { filters: {} };
+      return { ...sessionPayload, filters: {} };
     }
     return {
-      aggregate: { total_amount: 1000, count: 1, by_month: [] },
+      ...sessionPayload,
+      aggregate: {},
       strategy: { growth_rate: 0.08 },
     };
   };
@@ -926,27 +983,8 @@ export default function App() {
     }
 
     if (task === "qa") {
-      const answer = String(taskResult.answer ?? "");
-      const citations = Array.isArray(taskResult.citations) ? taskResult.citations.length : 0;
-      const retrieval = String(taskResult.retrieval ?? "");
-      const confidenceRaw = Number(taskResult.confidence ?? 0);
-      const confidence = Number.isFinite(confidenceRaw) ? confidenceRaw : 0;
-      const needsClarification = Boolean(taskResult.needs_clarification);
-      const clarifyingQuestion = String(taskResult.clarifying_question ?? "");
-      const itemsCountRaw = Number(taskResult.items_count ?? 0);
-      const itemsCount = Number.isFinite(itemsCountRaw) ? itemsCountRaw : 0;
-
-      let lines =
-        `\n\n### 任务结果\n- 任务类型: ${TASK_META[task].label}` +
-        `\n- 引用条目: ${citations}` +
-        `\n- 检索模式: ${retrieval || "unknown"}` +
-        `\n- 候选条目: ${itemsCount}` +
-        `\n- 置信度: ${confidence.toFixed(2)}` +
-        `\n- 需要补充信息: ${needsClarification ? "是" : "否"}`;
-      if (needsClarification && clarifyingQuestion) {
-        lines += `\n- 澄清问题: ${clarifyingQuestion}`;
-      }
-      return `${lines}\n\n${answer}`;
+      // Chat replies should stay conversational; do not append QA evaluation/debug fields.
+      return "";
     }
 
     if (task === "reimburse") {
@@ -1158,8 +1196,9 @@ export default function App() {
       { role: "user", content: text },
     ];
     const referencedContext = await buildReferencedContext();
+    const activeChatSessionId = await resolveActiveChatSessionId();
     const taskPayload = {
-      ...getTaskPayload(selectedTask, text),
+      ...getTaskPayload(selectedTask, text, activeChatSessionId),
       referenced_files: referencedContext.referencedPaths,
       referenced_file_context: referencedContext.referencedContextText,
     };
@@ -1192,6 +1231,7 @@ export default function App() {
               history: historyForAgent,
               workspace_mode: true,
               workspace_dir: rootDir,
+              chat_session_id: activeChatSessionId,
               referenced_files: referencedContext.referencedPaths,
               referenced_file_context: referencedContext.referencedContextText,
             })
@@ -1201,6 +1241,7 @@ export default function App() {
                 history: historyForAgent,
                 task_type: selectedTask,
                 task_payload: taskPayload,
+                chat_session_id: activeChatSessionId,
                 referenced_files: referencedContext.referencedPaths,
                 referenced_file_context: referencedContext.referencedContextText,
               }))) as AgentChatResponse;
@@ -1304,6 +1345,7 @@ export default function App() {
               history: historyForAgent,
               workspace_mode: true,
               workspace_dir: rootDir,
+              chat_session_id: activeChatSessionId,
               referenced_files: referencedContext.referencedPaths,
               referenced_file_context: referencedContext.referencedContextText,
             })
@@ -1313,6 +1355,7 @@ export default function App() {
                 history: historyForAgent,
                 task_type: selectedTask,
                 task_payload: taskPayload,
+                chat_session_id: activeChatSessionId,
                 referenced_files: referencedContext.referencedPaths,
                 referenced_file_context: referencedContext.referencedContextText,
               }));
@@ -1343,15 +1386,6 @@ export default function App() {
         return [...prev, { role: "agent", content: errText }];
       });
       setChatLoading(false);
-    }
-  };
-
-  const handleDownload = async () => {
-    if (!bridge || !currentFile) return;
-    try {
-      await (bridge as any).saveAs(currentFile);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -1547,8 +1581,43 @@ export default function App() {
   };
 
   return (
-    <div className="app-layout" ref={appRef}>
-      <aside className="sidebar" style={{ flex: `0 0 ${sidebarWidthPx}px` }}>
+    <>
+      <header className="window-titlebar">
+        <div className="window-titlebar-drag">
+          <span className="window-title-text">桌宠助手</span>
+        </div>
+        <div className="window-titlebar-actions">
+          <button
+            type="button"
+            className="window-control-btn"
+            aria-label="最小化"
+            title="最小化"
+            onClick={() => void handleWindowMinimize()}
+          >
+            <MinusOutlined />
+          </button>
+          <button
+            type="button"
+            className="window-control-btn"
+            aria-label={windowMaximized ? "还原" : "最大化"}
+            title={windowMaximized ? "还原" : "最大化"}
+            onClick={() => void handleWindowToggleMaximize()}
+          >
+            {windowMaximized ? <FullscreenExitOutlined /> : <BorderOutlined />}
+          </button>
+          <button
+            type="button"
+            className="window-control-btn is-close"
+            aria-label="关闭"
+            title="关闭"
+            onClick={() => void handleWindowClose()}
+          >
+            <CloseOutlined />
+          </button>
+        </div>
+      </header>
+      <div className="app-layout" ref={appRef}>
+        <aside className="sidebar" style={{ flex: `0 0 ${sidebarWidthPx}px` }}>
         <Space direction="vertical" size="small" className="sidebar-header">
           <div className="sidebar-title-row">
             <Title level={4}>功能面板</Title>
@@ -1813,9 +1882,9 @@ export default function App() {
             setSidebarWidthPx((prev) => Math.max(220, prev + delta));
           }}
         />
-      </aside>
+        </aside>
 
-      <main className="content" ref={contentRef}>
+        <main className="content" ref={contentRef}>
         <section className="chat-panel" style={{ flex: `0 0 ${chatPanePercent}%` }}>
               <div
                 className="resize-handle resize-handle--right"
@@ -2111,8 +2180,9 @@ export default function App() {
             onExcelTrimSheet={trimExcelSheet}
           />
         </div>
-      </main>
-    </div>
+        </main>
+      </div>
+    </>
   );
 }
 

@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from agent.tools.base import ToolResult, ok
+from agent.tools.storage_tools import load_records
 
 
 def data_clean(records: List[Dict[str, Any]]) -> ToolResult:
@@ -41,14 +42,29 @@ def aggregate_records(records: List[Dict[str, Any]]) -> ToolResult:
 def generate_final_account(aggregate: Dict[str, Any], output_dir: str | None = None) -> ToolResult:
     out_dir = Path(output_dir or "docs/parsed/final_outputs").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / f"final_account_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    target = out_dir / f"final_account_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
     pd.DataFrame(aggregate.get("by_month", [])).to_excel(target, index=False)
     return ok(final_account_path=str(target))
 
 
 def load_final_data(payload: Dict[str, Any]) -> ToolResult:
     aggregate = payload.get("aggregate", {})
-    return ok(final_data=aggregate)
+    if isinstance(aggregate, dict) and aggregate:
+        return ok(final_data=aggregate)
+
+    filters = payload.get("filters", {}) if isinstance(payload.get("filters", {}), dict) else {}
+    session_id = str(payload.get("chat_session_id", "")).strip()
+    if session_id and not str(filters.get("session_id", filters.get("chat_session_id", "")) or "").strip():
+        filters = {**filters, "session_id": session_id}
+
+    records_res = load_records(filters, payload.get("db_path"))
+    records = records_res.data.get("records", []) if records_res.success else []
+    aggregate_res = aggregate_records(records)
+    return ok(
+        final_data=aggregate_res.data.get("aggregate", {}),
+        source_records=len(records),
+        fallback_used=bool(records_res.data.get("fallback_used", False)),
+    )
 
 
 def budget_calculate(final_data: Dict[str, Any], strategy: Dict[str, Any] | None = None) -> ToolResult:
@@ -62,7 +78,7 @@ def budget_calculate(final_data: Dict[str, Any], strategy: Dict[str, Any] | None
 def generate_budget(budget: Dict[str, Any], output_dir: str | None = None) -> ToolResult:
     out_dir = Path(output_dir or "docs/parsed/budget_outputs").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / f"budget_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    target = out_dir / f"budget_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
     pd.DataFrame([budget]).to_excel(target, index=False)
     return ok(budget_path=str(target))
 
@@ -70,7 +86,7 @@ def generate_budget(budget: Dict[str, Any], output_dir: str | None = None) -> To
 def generate_report(aggregate: Dict[str, Any], budget: Dict[str, Any], output_dir: str | None = None) -> ToolResult:
     out_dir = Path(output_dir or "docs/parsed/report_outputs").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+    target = out_dir / f"report_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.md"
     content = (
         "# 年度分析报告\n\n"
         f"- 决算总额: {aggregate.get('total_amount', 0)}\n"

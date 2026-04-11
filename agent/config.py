@@ -36,6 +36,7 @@ class GraphPolicyConfig:
     qa_kb_score_threshold: float
     final_generate_when_empty: bool
     budget_skip_calculate_when_empty: bool
+    graph_enable_trace: bool
 
 
 @lru_cache(maxsize=1)
@@ -103,6 +104,10 @@ def get_graph_policy_config() -> GraphPolicyConfig:
         budget_skip_calculate_when_empty=_safe_bool(
             os.getenv("AGENT_GRAPH_BUDGET_SKIP_CALCULATE_WHEN_EMPTY", "true"),
             True,
+        ),
+        graph_enable_trace=_safe_bool(
+            os.getenv("AGENT_GRAPH_ENABLE_TRACE", "false"),
+            False,
         ),
     )
 

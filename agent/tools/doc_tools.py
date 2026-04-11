@@ -377,7 +377,9 @@ def generate_excel_sheet(invoices: List[Dict[str, Any]], activity: Dict[str, Any
         # 准备数据
         data = {
             "invoices": invoices,
-            "activity": activity
+            "activity": activity,
+            "expense_data_list": invoices,  # 支持 expense_data_list 格式
+            "payment_data_list": invoices   # 支持 payment_data_list 格式
         }
         
         # 动态添加模板需要的字段

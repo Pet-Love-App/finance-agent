@@ -15,6 +15,7 @@ from agent.graphs.names import (
     NODE_BUDGET_GENERATE,
     NODE_BUDGET_START,
     NODE_CLASSIFY_FILE,
+    NODE_COLLECT_INFO,
     NODE_DATA_AGGREGATE,
     NODE_DATA_CLEAN,
     NODE_EXTRACT,
@@ -78,11 +79,13 @@ from agent.graphs.subgraphs.qa import qa_fallback_node, qa_start_node, question_
 from agent.graphs.subgraphs.reimburse import (
     activity_parse_node,
     classify_file_node,
+    collect_info_node,
     extract_node,
     gen_doc_node,
     gen_mail_node,
     invoice_extract_node,
     reimburse_start_node,
+    route_after_collect_info,
     route_after_extract,
     route_after_rule_check,
     route_after_scan,
@@ -106,6 +109,7 @@ def _register_nodes(graph: StateGraph) -> None:
         NODE_INVOICE_EXTRACT: invoice_extract_node,
         NODE_ACTIVITY_PARSE: activity_parse_node,
         NODE_RULE_CHECK: rule_check_node,
+        NODE_COLLECT_INFO: collect_info_node,
         NODE_GEN_DOC: gen_doc_node,
         NODE_GEN_MAIL: gen_mail_node,
         NODE_SAVE_RECORD: save_record_node,
@@ -176,6 +180,15 @@ def _connect_reimburse_flow(graph: StateGraph) -> None:
         NODE_RULE_CHECK,
         route_after_rule_check,
         REIMBURSE_RULE_ROUTES,
+    )
+    # 添加 CollectInfoNode 到 GenDocNode 的连接
+    graph.add_conditional_edges(
+        NODE_COLLECT_INFO,
+        route_after_collect_info,
+        {
+            "GenDocNode": NODE_GEN_DOC,
+            "ReimburseFailNode": NODE_REIMBURSE_FAIL
+        },
     )
     graph.add_edge(NODE_GEN_DOC, NODE_GEN_MAIL)
     graph.add_edge(NODE_GEN_MAIL, NODE_SAVE_RECORD)

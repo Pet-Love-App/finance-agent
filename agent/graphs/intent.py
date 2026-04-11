@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+import re
 from typing import Any, Dict, List, Tuple
 
 from agent.graphs.names import (
@@ -43,6 +46,106 @@ def _to_bool(raw: Any) -> bool:
 
 def _normalize_explicit_task(task_type: str) -> str:
     return normalize_task_alias(task_type)
+
+
+def _normalize_llm_task(task_type: str) -> str:
+    text = str(task_type or "").strip().lower()
+    mapped = normalize_task_alias(text)
+    if mapped:
+        return mapped
+    aliases = {
+        "final": TASK_FINAL,
+        "final_account": TASK_FINAL,
+        "budget": TASK_BUDGET,
+        "qa": TASK_QA,
+        "recon": TASK_RECON,
+        "reimburse": TASK_REIMBURSE,
+        "sandbox": TASK_SANDBOX,
+        "sandbox_exec": TASK_SANDBOX,
+        "file_edit": TASK_FILE_EDIT,
+    }
+    return aliases.get(text, "")
+
+
+def _extract_json_object(raw: str) -> Dict[str, Any]:
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        pass
+    match = re.search(r"\{[\s\S]*\}", text)
+    if not match:
+        return {}
+    try:
+        parsed = json.loads(match.group(0))
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _infer_task_with_llm_fallback(
+    query: str,
+    *,
+    rule_task: str,
+    rule_confidence: float,
+) -> Tuple[str, float, str] | None:
+    enabled = str(os.getenv("AGENT_INTENT_USE_LLM_FALLBACK", "true")).strip().lower()
+    if enabled in {"0", "false", "no", "off"}:
+        return None
+    api_key = (os.getenv("AGENT_LLM_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")).strip()
+    if not api_key:
+        return None
+    question = str(query or "").strip()
+    if not question:
+        return None
+
+    try:
+        from agent.tools.qa_tools import _call_llm_chat, _to_float_env  # noqa: WPS433
+    except Exception:
+        return None
+
+    model = str(os.getenv("AGENT_LLM_MODEL", "gpt-4o-mini")).strip() or "gpt-4o-mini"
+    temperature = _to_float_env("AGENT_INTENT_LLM_TEMPERATURE", 0.0)
+    prompt = (
+        "请将用户问题路由到一个任务类型。"
+        "候选 task_type 仅允许：qa,reimburse,final_account,budget,recon,file_edit,sandbox_exec。"
+        "优先规则：涉及制度解释、能否报销、费用归类、材料要求、流程咨询 -> qa。"
+        "仅输出 JSON 对象："
+        '{"task_type":"qa","confidence":0.0,"reason":"..."}'
+    )
+    user = (
+        f"用户问题：{question}\n"
+        f"规则初判：task={rule_task}, confidence={round(float(rule_confidence), 3)}\n"
+        "请返回 JSON。"
+    )
+
+    try:
+        raw = _call_llm_chat(
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user},
+            ],
+            model=model,
+            temperature=temperature,
+            timeout=12,
+        )
+    except Exception:
+        return None
+
+    payload = _extract_json_object(raw)
+    llm_task = _normalize_llm_task(str(payload.get("task_type", "")))
+    if not llm_task:
+        return None
+    try:
+        llm_conf = float(payload.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        llm_conf = 0.0
+    llm_conf = min(max(llm_conf, 0.0), 1.0)
+    reason = str(payload.get("reason", "")).strip()
+    return llm_task, llm_conf, reason
 
 
 def _classify_task(query: str, payload: Dict[str, Any]) -> Tuple[str, float, List[str]]:
@@ -117,6 +220,32 @@ def _classify_task(query: str, payload: Dict[str, Any]) -> Tuple[str, float, Lis
         _append_reason(reasons, "R101_QA")
         return TASK_QA, 0.85, reasons
 
+    expense_keywords = ("酒店", "住宿", "宾馆", "机票", "高铁", "打车", "餐饮", "费用")
+    classify_question_keywords = ("属于哪类", "算什么类", "是什么类", "能报吗", "可报吗", "是否可报")
+    if any(key in text for key in expense_keywords) and any(key in text for key in classify_question_keywords):
+        _append_reason(reasons, "R103_QA_EXPENSE_CLASSIFY")
+        return TASK_QA, 0.86, reasons
+
+    has_reimburse = any(key in text for key in ("报销", "发票", "附件"))
+    has_guide_question = any(
+        key in text
+        for key in (
+            "流程",
+            "步骤",
+            "怎么办",
+            "怎么办理",
+            "如何",
+            "怎么",
+            "告诉我",
+            "请问",
+            "介绍一下",
+            "基本",
+        )
+    )
+    if has_reimburse and has_guide_question:
+        _append_reason(reasons, "R102_QA_PROCESS")
+        return TASK_QA, 0.86, reasons
+
     if has_budget:
         _append_reason(reasons, "R402_BUDGET")
         return TASK_BUDGET, 0.74, reasons
@@ -125,7 +254,7 @@ def _classify_task(query: str, payload: Dict[str, Any]) -> Tuple[str, float, Lis
         _append_reason(reasons, "R502_FINAL")
         return TASK_FINAL, 0.74, reasons
 
-    if any(key in text for key in ("报销", "发票", "附件")):
+    if has_reimburse:
         _append_reason(reasons, "R302_REIMBURSE")
         return TASK_REIMBURSE, 0.72, reasons
 
@@ -188,6 +317,20 @@ def intent_node(state: AppState) -> AppState:
 
     query = str(payload.get("query", ""))
     inferred_task, confidence, reason_codes = _classify_task(query, payload)
+    if confidence < 0.8:
+        llm_result = _infer_task_with_llm_fallback(
+            query,
+            rule_task=inferred_task,
+            rule_confidence=confidence,
+        )
+        if llm_result is not None:
+            llm_task, llm_conf, llm_reason = llm_result
+            if llm_conf >= 0.8:
+                inferred_task = llm_task
+                confidence = llm_conf
+                _append_reason(reason_codes, "R901_LLM_FALLBACK")
+                if llm_reason:
+                    _append_reason(reason_codes, "R901_LLM_REASON")
     profile = get_task_profile(inferred_task) or TASK_PROFILES[TASK_REIMBURSE]
     runtime_task = profile["runtime_task"]
     is_write_task = bool(profile.get("is_write_task", False))
