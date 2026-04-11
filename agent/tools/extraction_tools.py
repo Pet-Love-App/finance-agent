@@ -342,36 +342,57 @@ def extract_text_from_files(classified: Dict[str, List[str]]) -> ToolResult:
     texts: List[str] = []
     file_text_map: Dict[str, str] = {}
 
+    print("\n=== OCR 调试信息 ===")
+    print(f"分类文件: {classified}")
+
     for pdf in classified.get("pdf", []):
+        print(f"\n处理 PDF 文件: {pdf}")
         pdf_res = extract_pdf_text(pdf)
         if pdf_res.success and pdf_res.data.get("text"):
             text = str(pdf_res.data["text"])
+            print(f"  PDF 文本提取成功，长度: {len(text)}")
             file_text_map[pdf] = text
             texts.append(text)
             continue
         # PDF 没有文本层，尝试 OCR
+        print("  PDF 无文本层，尝试 OCR")
         ocr_res = ocr_extract(pdf)
         text = str(ocr_res.data.get("text", ""))
         if text:
+            print(f"  OCR 成功，提取文本长度: {len(text)}")
+            print(f"  OCR 提取内容预览: {text[:200]}...")
             file_text_map[pdf] = text
             texts.append(text)
         else:
+            print("  OCR 失败，无文本提取")
             file_text_map[pdf] = "[PDF 无文本层且 OCR 失败]"
             texts.append("[PDF 无文本层且 OCR 失败]")
 
     for img in classified.get("image", []):
+        print(f"\n处理图片文件: {img}")
         ocr_res = ocr_extract(img)
         text = str(ocr_res.data.get("text", ""))
         if text:
+            print(f"  OCR 成功，提取文本长度: {len(text)}")
+            print(f"  OCR 提取内容预览: {text[:200]}...")
             file_text_map[img] = text
             texts.append(text)
+        else:
+            print("  OCR 失败，无文本提取")
 
     for txt in classified.get("text", []):
+        print(f"\n处理文本文件: {txt}")
         try:
             content = Path(txt).read_text(encoding="utf-8")
+            print(f"  文本文件读取成功，长度: {len(content)}")
         except UnicodeDecodeError:
             content = Path(txt).read_text(encoding="gbk", errors="ignore")
+            print(f"  文本文件读取成功（使用 GBK 编码），长度: {len(content)}")
         file_text_map[txt] = content
         texts.append(content)
 
-    return ok(file_text_map=file_text_map, merged_text="\n\n".join(texts))
+    merged_text = "\n\n".join(texts)
+    print(f"\n合并文本总长度: {len(merged_text)}")
+    print("=== OCR 调试信息结束 ===")
+
+    return ok(file_text_map=file_text_map, merged_text=merged_text)

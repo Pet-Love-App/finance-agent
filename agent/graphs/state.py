@@ -14,6 +14,8 @@ class AppState(TypedDict, total=False):
     file_text_map: Dict[str, str]
 
     invoice: Dict[str, Any]
+    invoices: List[Dict[str, Any]]
+    total_amount: float
     activity: Dict[str, Any]
     rule_result: Dict[str, Any]
     email_draft: Dict[str, Any]
